@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project name="Receipt Studio" version="1.1.1" license="MIT">
+<project name="Receipt Studio" version="1.2.0" license="MIT">
   <summary>
     <branding>
       <name>Receipt Studio</name>
@@ -38,6 +38,8 @@
     <feature>Fixed-canvas label designer with custom sheet dimensions</feature>
     <feature>4×6, 4×4, 3×2, 2×1.5, 2×1, and metric label presets</feature>
     <feature>System, ZPL, and TSPL label printing</feature>
+    <feature>Product-bound price labels with name, price, SKU, stock, barcode, and QR fields</feature>
+    <feature>Strict separation between POS receipt printers and product label printers</feature>
     <feature>Direct ESC/POS printing over TCP port 9100</feature>
     <feature>Windows-installed system printer support</feature>
     <feature>Receipt-width PDF export</feature>
@@ -99,8 +101,8 @@
       <step>Create a GitHub Release and attach both executables.</step>
     </procedure>
     <artifacts>
-      <artifact>release/Receipt Studio-Setup-1.1.1-x64.exe</artifact>
-      <artifact>release/Receipt Studio-Portable-1.1.1-x64.exe</artifact>
+      <artifact>release/Receipt Studio-Setup-1.2.0-x64.exe</artifact>
+      <artifact>release/Receipt Studio-Portable-1.2.0-x64.exe</artifact>
     </artifacts>
     <signing>
       Release executables should be Authenticode-signed before public

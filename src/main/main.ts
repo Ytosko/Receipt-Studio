@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir, appendFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { collections, labelTemplateSchema, printerSchema, saleSchema, type LabelElement, type LabelTemplate, type PrinterProfile } from "../../shared/schemas.js";
+import { collections, labelTemplateSchema, printerSchema, productSchema, saleSchema, type LabelElement, type LabelTemplate, type PrinterProfile } from "../../shared/schemas.js";
+import { bindProductLabel, sampleLabelProduct } from "../../shared/productLabel.js";
 import { Repository } from "./storage/repository.js";
 import { renderReceipt, linesToHtml } from "./receipt/render.js";
 import { escPosBytes } from "./printing/escpos.js";
@@ -80,9 +81,17 @@ async function printLabelTemplate(label:LabelTemplate,printer:PrinterProfile){
   try{return await new Promise<any>((resolve,reject)=>win.webContents.print({silent:false,deviceName:printer.system?.deviceName,printBackground:true,margins:{marginType:"none"},pageSize:{width:Math.round(label.widthMm*1000),height:Math.round(label.heightMm*1000)}},(ok,reason)=>ok?resolve({ok:true,message:"Label sent to Windows printer"}):reject(new Error(reason))));}
   finally{win.close()}
 }
+async function getLabelPrintSelection(labelId:string,printerId:string){
+  const labels=await repo.load("labels") as any[],printers=await repo.load("printers") as any[];
+  const savedLabel=labels.find(x=>x.id===labelId);if(!savedLabel)throw new Error("Label template not found");
+  const savedPrinter=printers.find(x=>x.id===printerId);if(!savedPrinter)throw new Error("Label printer not found");
+  const label=labelTemplateSchema.parse(savedLabel),printer=printerSchema.parse(savedPrinter);
+  if(printer.printerType!=="label")throw new Error("Only label printers can print product labels");
+  return{label,printer};
+}
 async function printSavedSale(saleId:string){
-  const c=await getContext(saleId), printers=await repo.load("printers") as any[], printer=printers.find(p=>p.id===c.sale.printerId)||printers.find(p=>p.id===c.shop.defaultPrinterId);
-  if(!printer)throw new Error("No printer configured");
+  const c=await getContext(saleId), printers=await repo.load("printers") as any[], printer=printers.find(p=>p.id===c.sale.printerId&&p.printerType==="receipt")||printers.find(p=>p.id===c.shop.defaultPrinterId&&p.printerType==="receipt");
+  if(!printer)throw new Error("No receipt printer configured");
   try{const result=await printLines(printer,c.lines);c.sale.printStatus="succeeded";await repo.upsert("sales",c.sale);await log(`PRINT_OK printer=${printer.id} bytes=${result.bytes||0}`);return result;}
   catch(e:any){c.sale.printStatus="failed";await repo.upsert("sales",c.sale);await log(`PRINT_FAILED printer=${printer.id} error=${e.message}`);throw e;}
 }
@@ -91,19 +100,31 @@ function registerIpc(){
   ipcMain.handle("data:save",(_,p)=>repo.save(collection.parse(p.collection),p.data));
   ipcMain.handle("data:upsert",(_,p)=>repo.upsert(entityCollections.parse(p.collection),p.entity));
   ipcMain.handle("data:remove",(_,p)=>repo.remove(entityCollections.parse(p.collection),z.string().parse(p.id)));
-  ipcMain.handle("sale:complete",async(_,p)=>{const sale=saleSchema.parse(p.sale), number=await repo.reserveReceipt(sale.shopId);sale.receiptNumber=number;await repo.upsert("sales",sale);if(p.print){try{return{sale,print:await printSavedSale(sale.id)}}catch(e:any){return{sale,print:{ok:false,message:e.message}}}}return{sale};});
+  ipcMain.handle("sale:complete",async(_,p)=>{const sale=saleSchema.parse(p.sale);if(sale.printerId){const printers=await repo.load("printers") as any[],printer=printers.find(x=>x.id===sale.printerId);if(!printer||printer.printerType!=="receipt")throw new Error("POS sales can only use a receipt printer");}const number=await repo.reserveReceipt(sale.shopId);sale.receiptNumber=number;await repo.upsert("sales",sale);if(p.print){try{return{sale,print:await printSavedSale(sale.id)}}catch(e:any){return{sale,print:{ok:false,message:e.message}}}}return{sale};});
   ipcMain.handle("print:sale",(_,p)=>printSavedSale(z.string().parse(p.saleId)));
   ipcMain.handle("print:test",async(_,p)=>{const printers=await repo.load("printers") as any[], printer=printerSchema.parse(printers.find(x=>x.id===p.printerId));return printer.connectionType==="network"?testNetwork(printer):{ok:true,message:"System printer selected"};});
   ipcMain.handle("print:template-test",async(_,p)=>{
     const printerId=z.string().parse(p.printerId),templateId=z.string().parse(p.templateId);
-    const printers=await repo.load("printers") as any[], printer=printerSchema.parse(printers.find(x=>x.id===printerId));if(!printer)throw new Error("Printer not found");
+    const printers=await repo.load("printers") as any[], savedPrinter=printers.find(x=>x.id===printerId);if(!savedPrinter)throw new Error("Receipt printer not found");
+    const printer=printerSchema.parse(savedPrinter);if(printer.printerType!=="receipt")throw new Error("Receipt tests can only use a receipt printer");
     const templates=await repo.load("templates") as any[], template=templates.find(x=>x.id===templateId);if(!template)throw new Error("Receipt template not found");
     const shops=await repo.load("shops") as any[], shop=shops.find(x=>x.id===template.shopId);if(!shop)throw new Error("Template shop not found");
     const createdAt=new Date().toISOString(),sale={id:crypto.randomUUID(),shopId:shop.id,templateId:template.id,printerId:printer.id,receiptNumber:"TEST-RECEIPT",customerSnapshot:{name:"Sample Customer",phone:"01700-000000"},items:[{id:crypto.randomUUID(),name:"Sample Product",sku:"TEST-001",quantity:2,unitPrice:25000,discount:0,taxRate:0,lineSubtotal:50000,lineTax:0,lineTotal:50000}],subtotal:50000,discount:0,tax:0,total:50000,paymentMethod:"cash",amountPaid:50000,changeDue:0,note:"Printer test - no sale was recorded",status:"completed",printStatus:"not_printed",createdAt};
     const result=await printLines(printer,await renderWithAssets(template,sale,shop));await log(`TEST_PRINT_OK printer=${printer.id} template=${template.id}`);return result;
   });
   ipcMain.handle("print:list",async()=>{const win=BrowserWindow.getAllWindows()[0];return (await win.webContents.getPrintersAsync()).map(p=>({name:p.name,displayName:p.displayName}))});
-  ipcMain.handle("print:label",async(_,p)=>{const labelId=z.string().parse(p.labelId),printerId=z.string().parse(p.printerId),labels=await repo.load("labels") as any[],printers=await repo.load("printers") as any[],label=labelTemplateSchema.parse(labels.find(x=>x.id===labelId)),printer=printerSchema.parse(printers.find(x=>x.id===printerId));const result=await printLabelTemplate(label,printer);await log(`LABEL_PRINT_OK printer=${printer.id} label=${label.id}`);return result});
+  ipcMain.handle("print:product-label",async(_,p)=>{
+    const productId=z.string().parse(p.productId),labelId=z.string().parse(p.labelId),printerId=z.string().parse(p.printerId);
+    const {label,printer}=await getLabelPrintSelection(labelId,printerId),products=await repo.load("products") as any[];
+    const savedProduct=products.find(x=>x.id===productId);if(!savedProduct)throw new Error("Product not found");
+    const product=productSchema.parse(savedProduct),shops=await repo.load("shops") as any[],shop=shops.find(x=>x.id===label.shopId)||shops.find(x=>product.shopIds.includes(x.id))||shops[0];
+    const result=await printLabelTemplate(bindProductLabel(label,product,shop),printer);await log(`PRODUCT_LABEL_PRINT_OK printer=${printer.id} label=${label.id} product=${product.id}`);return result;
+  });
+  ipcMain.handle("print:label-test",async(_,p)=>{
+    const labelId=z.string().parse(p.labelId),printerId=z.string().parse(p.printerId),{label,printer}=await getLabelPrintSelection(labelId,printerId);
+    const shops=await repo.load("shops") as any[],shop=shops.find(x=>x.id===label.shopId)||shops[0];
+    const result=await printLabelTemplate(bindProductLabel(label,sampleLabelProduct,shop),printer);await log(`LABEL_TEST_OK printer=${printer.id} label=${label.id}`);return result;
+  });
   ipcMain.handle("sale:pdf",async(_,p)=>{const c=await getContext(z.string().parse(p.saleId)), choice=await dialog.showSaveDialog({defaultPath:`receipt-${c.sale.receiptNumber}.pdf`,filters:[{name:"PDF",extensions:["pdf"]}]});if(choice.canceled||!choice.filePath)return{canceled:true};const win=new BrowserWindow({show:false,webPreferences:{sandbox:true}});await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<style>@page{size:80mm auto;margin:3mm}body{font:12px monospace;width:72mm}</style>${linesToHtml(c.lines)}`)}`);await writeFile(choice.filePath,await win.webContents.printToPDF({pageSize:{width:80000,height:Math.max(120000,c.lines.length*7000)},printBackground:true}));win.close();return{path:choice.filePath};});
   ipcMain.handle("backup:export",()=>repo.exportBackup());ipcMain.handle("backup:import",()=>repo.importBackup());
   ipcMain.handle("asset:choose-shop-logo",()=>repo.chooseShopLogo());

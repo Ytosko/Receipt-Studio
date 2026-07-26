@@ -1,4 +1,4 @@
-import type { LabelElement, LabelTemplate, PrinterProfile } from "../../../shared/schemas.js";
+import type { LabelTemplate, PrinterProfile } from "../../../shared/schemas.js";
 
 const dots=(mm:number,dpi:number)=>Math.round(mm*dpi/25.4);
 const safe=(value:string)=>value.replace(/[\^~]/g," ").replace(/"/g,"'");
@@ -22,8 +22,3 @@ export function labelToTspl(label:LabelTemplate,profile:PrinterProfile){
     if(e.type==="line")out.push(`BAR ${x},${y},${w},${Math.max(1,h)}`);
   }return `${out.join("\r\n")}\r\nPRINT 1,1\r\n`;
 }
-export const labelSampleElements=():LabelElement[]=>[
-  {id:crypto.randomUUID(),type:"text",x:5,y:5,width:90,height:10,text:"Product Name",fontSize:18,bold:true,rotation:0,barcodeFormat:"code128"},
-  {id:crypto.randomUUID(),type:"barcode",x:8,y:25,width:85,height:35,text:"123456789012",fontSize:12,bold:false,rotation:0,barcodeFormat:"code128"},
-  {id:crypto.randomUUID(),type:"text",x:5,y:65,width:90,height:10,text:"SKU: SAMPLE-001",fontSize:12,bold:false,rotation:0,barcodeFormat:"code128"}
-];
