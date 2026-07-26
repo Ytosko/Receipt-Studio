@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem in Receipt Studio
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Remove customer, shop, sales, IP address, and other private information before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Receipt Studio version
+      placeholder: "1.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sales and checkout
+        - Receipt designer
+        - Receipt printing
+        - Label designer or printing
+        - Shops, products, or customers
+        - Backup or restore
+        - Installation or startup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the expected behavior and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open…
+        2. Select…
+        3. Click…
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer details
+      description: If relevant, include model, connection type, paper size, command language, and encoding.
+      placeholder: "Rongta RP336UE, Windows/USB, 80 mm"
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add sanitized screenshots or error messages. Do not upload a backup containing customer data.

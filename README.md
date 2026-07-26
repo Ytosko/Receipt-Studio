@@ -4,6 +4,21 @@
   <img src="public/logo.png" alt="Receipt Studio logo" width="240">
 </p>
 
+<p align="center">
+  <a href="https://reciept-printer.ytosko.dev/"><img alt="Website" src="https://img.shields.io/badge/website-reciept--printer.ytosko.dev-7438e6"></a>
+  <a href="https://github.com/Ytosko/Receipt-Studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ytosko/Receipt-Studio?color=ff5f83"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Ytosko/Receipt-Studio"></a>
+  <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-17131f">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Ytosko/Receipt-Studio/releases/latest"><strong>Download Receipt Studio</strong></a>
+  ·
+  <a href="https://reciept-printer.ytosko.dev/">Product website</a>
+  ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
 Receipt Studio is a local-first Windows desktop point-of-sale and structured thermal-receipt designer. It manages shops, products, customers, sales, templates, and printers without an external database or cloud account. It supports Rongta-compatible ESC/POS output over raw TCP, installed Windows printers, receipt-width PDF export, backups, and diagnostics.
 
 Completed sales receive collision-checked random receipt identifiers rather than reusable sequential numbers. Payment methods can be managed under **Settings → Payment methods**. QR blocks generate genuine scannable codes in the designer, PDF output, system printing, and ESC/POS printing; their payload can contain the receipt number, total, shop name, or a custom variable-based value.
@@ -12,9 +27,9 @@ An XML-formatted project and release reference is available in [`README.xml`](RE
 
 Receipt Studio also supports fixed-size label design and printing. Label profiles can use Windows-installed USB printers or raw network ZPL/TSPL printers. Included media presets are 4×6, 4×4, 3×2, 2×1.5, and 2×1 inches plus common metric sizes. Width and height can always be entered manually for custom sheets.
 
-## Screenshots
+## Product website
 
-Add product screenshots to `docs/screenshots/`: dashboard, new sale, template designer, and receipt preview.
+Explore the product, printer options, label designer, and latest Windows download at [reciept-printer.ytosko.dev](https://reciept-printer.ytosko.dev/).
 
 ## Requirements
 
