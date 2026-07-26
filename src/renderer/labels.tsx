@@ -3,8 +3,8 @@ import { Barcode as BarcodeIcon, Box, Grip, Minus, Package, Plus, Printer, QrCod
 import QRCode from "qrcode";
 import bwipjs from "bwip-js/browser";
 import type { LabelElement, LabelTemplate } from "../../shared/schemas";
-import { bindProductLabel, productPriceTagElements, sampleLabelProduct } from "../../shared/productLabel";
-import { Empty, Field } from "./components";
+import { bindProductLabel, findAvailableLabelPosition, sampleLabelProduct } from "../../shared/productLabel";
+import { DraftNumberInput, Empty, Field } from "./components";
 import { useStore } from "./store";
 
 const now = () => new Date().toISOString();
@@ -64,7 +64,7 @@ export function LabelsPage() {
   const [selectedId, setSelectedId] = useState(store.labels[0]?.id || "");
   const [draft, setDraft] = useState<LabelTemplate | undefined>(store.labels[0]);
   const [selected, setSelected] = useState("");
-  const [saved, setSaved] = useState(true);
+  const [saved, setSaved] = useState(store.labels[0] ? Boolean(store.labels[0].savedAt) : true);
   const [printerId, setPrinterId] = useState("");
   const [printing, setPrinting] = useState(false);
   const [gesture, setGesture] = useState<{
@@ -86,27 +86,16 @@ export function LabelsPage() {
     || store.shops[0];
   const preview = draft ? bindProductLabel(draft, sampleLabelProduct, shop) : undefined;
   const labelPrinters = store.printers.filter(printer => printer.printerType === "label");
+  const isPersisted = Boolean(draft?.savedAt && store.labels.some(label => label.id === draft.id));
 
   useEffect(() => {
     const value = useStore.getState().labels.find(label => label.id === selectedId);
     if (value) {
       setDraft(value);
-      setSaved(true);
+      setSaved(Boolean(value.savedAt));
       setSelected("");
     }
   }, [selectedId]);
-
-  useEffect(() => {
-    if (saved || !draft) return;
-    const timer = window.setTimeout(() => {
-      const value = { ...draft, updatedAt: now() };
-      void upsert("labels", value).then(() => {
-        setDraft(value);
-        setSaved(true);
-      });
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [draft, saved, upsert]);
 
   const mutate = (change: (value: LabelTemplate) => LabelTemplate) => {
     if (draft) {
@@ -115,7 +104,8 @@ export function LabelsPage() {
     }
   };
 
-  const create = async () => {
+  const create = () => {
+    if (draft && !saved && !confirm("Discard the unsaved label changes?")) return;
     const value: LabelTemplate = {
       id: crypto.randomUUID(),
       name: `Product price tag ${store.labels.length + 1}`,
@@ -124,29 +114,57 @@ export function LabelsPage() {
       heightMm: 25,
       dpi: 203,
       orientation: "portrait",
-      elements: productPriceTagElements(),
+      elements: [],
       createdAt: now(),
       updatedAt: now()
     };
-    await store.upsert("labels", value);
+    setSelectedId("");
+    setDraft(value);
+    setSelected("");
+    setSaved(false);
+  };
+
+  const save = async () => {
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      alert("Enter a template name before saving.");
+      return;
+    }
+    const value = { ...draft, name: draft.name.trim(), updatedAt: now(), savedAt: now() };
+    await upsert("labels", value);
     setSelectedId(value.id);
     setDraft(value);
     setSaved(true);
   };
 
+  const chooseTemplate = (id: string) => {
+    if (!saved && !confirm("Discard the unsaved label changes?")) return;
+    const value = store.labels.find(label => label.id === id);
+    if (!value) return;
+    setSelectedId(value.id);
+    setDraft(value);
+    setSelected("");
+    setSaved(Boolean(value.savedAt));
+  };
+
   const add = (type: LabelElement["type"], binding?: LabelElement["binding"]) => {
-    const width = draft?.widthMm || 50;
+    if (!draft) return;
+    const width = draft.widthMm;
+    const elementWidth = type === "qrcode" ? 12 : Math.min(34, width - 4);
+    const elementHeight = type === "barcode" ? 9 : type === "qrcode" ? 12 : type === "line" ? 0.5 : 5;
+    const position = findAvailableLabelPosition(draft.elements, draft.widthMm, draft.heightMm, elementWidth, elementHeight);
     const value: LabelElement = {
       id: crypto.randomUUID(),
       type,
-      x: 3,
-      y: 3,
-      width: type === "qrcode" ? 12 : Math.min(34, width - 6),
-      height: type === "barcode" ? 9 : type === "qrcode" ? 12 : type === "line" ? 0.5 : 5,
+      x: position.x,
+      y: position.y,
+      width: elementWidth,
+      height: elementHeight,
       text: type === "text" && !binding ? "Custom text" : "",
       binding,
       fontSize: binding === "productPrice" ? 16 : binding === "productStock" ? 9 : 13,
       bold: binding === "productName" || binding === "productPrice",
+      align: "left",
       rotation: 0,
       barcodeFormat: "code128"
     };
@@ -162,14 +180,10 @@ export function LabelsPage() {
   };
 
   const printTest = async () => {
-    if (!draft || !printerId) return;
+    if (!draft || !printerId || !saved || !isPersisted) return;
     setPrinting(true);
     try {
-      const value = { ...draft, updatedAt: now() };
-      await store.upsert("labels", value);
-      setDraft(value);
-      setSaved(true);
-      const result = await window.receiptStudio.printLabelTest(value.id, printerId);
+      const result = await window.receiptStudio.printLabelTest(draft.id, printerId);
       alert(result.message || "Product label test sent to printer.");
     } catch (error: any) {
       alert(error.message);
@@ -182,7 +196,7 @@ export function LabelsPage() {
     return <Empty
       title="No product label templates"
       detail="Create a price-tag template before printing labels from the Products page."
-      action={<button className="btn btn-primary" onClick={() => void create()}><Plus size={16} />Create product label</button>}
+      action={<button className="btn btn-primary" onClick={create}><Plus size={16} />Create product label</button>}
     />;
   }
 
@@ -205,21 +219,25 @@ export function LabelsPage() {
 
   return <div className="-m-7 h-[calc(100%+3.5rem)] min-h-[720px] flex flex-col">
     <header className="h-16 bg-white border-b flex items-center gap-3 px-5">
-      <select className="input !w-52" value={selectedId} onChange={event => setSelectedId(event.target.value)}>
-        {store.labels.map(label => <option key={label.id} value={label.id}>{label.name}</option>)}
+      <select className="input !w-52" value={selectedId} onChange={event => chooseTemplate(event.target.value)}>
+        {!selectedId && <option value="">Unsaved new template</option>}
+        {store.labels.map(label => <option key={label.id} value={label.id}>{label.name}{label.savedAt ? "" : " (needs saving)"}</option>)}
       </select>
       <input className="input !w-56 font-bold" value={draft.name} onChange={event => mutate(value => ({ ...value, name: event.target.value }))} />
-      <span className="text-xs text-[#64746f]">{saved ? "Saved locally" : "Autosaving…"}</span>
-      <button className="btn ml-2" onClick={() => void create()}><Plus size={15} />New</button>
-      <div className="ml-auto flex items-center gap-2">
-        <select className="input !w-52" value={printerId} onChange={event => setPrinterId(event.target.value)}>
-          <option value="">Choose label printer</option>
-          {labelPrinters.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
-        </select>
-        <button className="btn btn-primary" disabled={!printerId || printing} onClick={() => void printTest()}>
-          <Printer size={16} />{printing ? "Printing…" : "Print test"}
-        </button>
-      </div>
+      <span className={`text-xs ${saved ? "text-[#64746f]" : "text-[#a24d00] font-semibold"}`}>{saved ? "Saved locally" : "Unsaved changes"}</span>
+      <button className="btn btn-primary ml-2" disabled={saved && isPersisted} onClick={() => void save()}>Save label</button>
+      <button className="btn" onClick={create}><Plus size={15} />New</button>
+      {saved && isPersisted
+        ? <div className="ml-auto flex items-center gap-2">
+          <select className="input !w-52" value={printerId} onChange={event => setPrinterId(event.target.value)}>
+            <option value="">Choose label printer</option>
+            {labelPrinters.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
+          </select>
+          <button className="btn btn-primary" disabled={!printerId || printing} onClick={() => void printTest()}>
+            <Printer size={16} />{printing ? "Printing…" : "Print test"}
+          </button>
+        </div>
+        : <span className="ml-auto text-xs text-[#6c7773]">Save the label to enable test printing.</span>}
     </header>
 
     <div className="grid grid-cols-[220px_1fr_300px] flex-1 min-h-0">
@@ -261,7 +279,7 @@ export function LabelsPage() {
                 setGesture({ id: element.id, mode: "move", cx: event.clientX, cy: event.clientY, x: element.x, y: element.y, w: element.width, h: element.height });
               }}
               className={`absolute overflow-hidden ${selected === element.id ? "outline outline-2 outline-[#6b25e9] outline-offset-2" : "hover:outline hover:outline-1 hover:outline-[#a98ae8]"}`}
-              style={{ left: element.x * scale, top: element.y * scale, width: element.width * scale, height: element.height * scale, transform: `rotate(${element.rotation}deg)`, fontSize: element.fontSize, fontWeight: element.bold ? 700 : 400 }}
+              style={{ left: element.x * scale, top: element.y * scale, width: element.width * scale, height: element.height * scale, transform: `rotate(${element.rotation}deg)`, fontSize: element.fontSize, fontWeight: element.bold ? 700 : 400, textAlign: element.align }}
             >
               {element.type === "text" && <div className="w-full h-full">{display.text}</div>}
               {element.type === "barcode" && <Barcode element={display} />}
@@ -297,8 +315,8 @@ export function LabelsPage() {
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Width mm"><input className="input" type="number" step=".1" min="5" value={draft.widthMm} onChange={event => mutate(value => ({ ...value, widthMm: Number(event.target.value) }))} /></Field>
-            <Field label="Height mm"><input className="input" type="number" step=".1" min="5" value={draft.heightMm} onChange={event => mutate(value => ({ ...value, heightMm: Number(event.target.value) }))} /></Field>
+            <Field label="Width mm"><DraftNumberInput className="input" step=".1" min="5" value={draft.widthMm} onValueChange={amount => mutate(value => ({ ...value, widthMm: amount }))} /></Field>
+            <Field label="Height mm"><DraftNumberInput className="input" step=".1" min="5" value={draft.heightMm} onValueChange={amount => mutate(value => ({ ...value, heightMm: amount }))} /></Field>
           </div>
           <Field label="DPI">
             <select className="input" value={draft.dpi} onChange={event => mutate(value => ({ ...value, dpi: Number(event.target.value) as 203 | 300 | 600 }))}>
@@ -333,13 +351,20 @@ export function LabelsPage() {
             </select>
           </Field>}
           <div className="grid grid-cols-2 gap-2">
-            <Field label="X mm"><input className="input" type="number" step=".1" value={active.x.toFixed(1)} onChange={event => updateElement({ x: Number(event.target.value) })} /></Field>
-            <Field label="Y mm"><input className="input" type="number" step=".1" value={active.y.toFixed(1)} onChange={event => updateElement({ y: Number(event.target.value) })} /></Field>
-            <Field label="Width mm"><input className="input" type="number" step=".1" value={active.width.toFixed(1)} onChange={event => updateElement({ width: Number(event.target.value) })} /></Field>
-            <Field label="Height mm"><input className="input" type="number" step=".1" value={active.height.toFixed(1)} onChange={event => updateElement({ height: Number(event.target.value) })} /></Field>
+            <Field label="X mm"><DraftNumberInput className="input" step=".1" value={active.x} formatValue={amount=>amount.toFixed(1)} onValueChange={amount => updateElement({ x: amount })} /></Field>
+            <Field label="Y mm"><DraftNumberInput className="input" step=".1" value={active.y} formatValue={amount=>amount.toFixed(1)} onValueChange={amount => updateElement({ y: amount })} /></Field>
+            <Field label="Width mm"><DraftNumberInput className="input" step=".1" value={active.width} formatValue={amount=>amount.toFixed(1)} onValueChange={amount => updateElement({ width: amount })} /></Field>
+            <Field label="Height mm"><DraftNumberInput className="input" step=".1" value={active.height} formatValue={amount=>amount.toFixed(1)} onValueChange={amount => updateElement({ height: amount })} /></Field>
           </div>
           {active.type === "text" && <>
-            <Field label="Font size"><input className="input" type="number" value={active.fontSize} onChange={event => updateElement({ fontSize: Number(event.target.value) })} /></Field>
+            <Field label="Font size"><DraftNumberInput className="input" min={1} value={active.fontSize} onValueChange={amount => updateElement({ fontSize: amount })} /></Field>
+            <Field label="Alignment">
+              <select className="input" value={active.align} onChange={event => updateElement({ align: event.target.value as LabelElement["align"] })}>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </Field>
             <label className="flex gap-2"><input type="checkbox" checked={active.bold} onChange={event => updateElement({ bold: event.target.checked })} />Bold</label>
           </>}
           <Field label="Rotation">

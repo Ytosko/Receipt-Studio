@@ -1,10 +1,13 @@
 import type { ReceiptBlock, ReceiptTemplate, Sale, Shop } from "../../../shared/schemas.js";
 import { formatMoney } from "../../../shared/money.js";
+import { receiptLoyaltyText, receiptMetadata, receiptPaymentText, receiptQrValue, shopContactLines } from "../../../shared/receiptContent.js";
 export type RenderLine =
   | { type:"text"; text:string; align:"left"|"center"|"right"; bold?:boolean; underline?:boolean; size?:ReceiptBlock["size"] }
-  | { type:"columns"; columns:Array<{text:string;width:number;align:"left"|"right"}> }
-  | { type:"divider"; character:string } | { type:"feed"; lines:number } | { type:"qrcode"; value:string; dataUrl?:string }
-  | { type:"logo" } | { type:"image"; data:Uint8Array; widthBytes:number; height:number; dataUrl?:string };
+  | { type:"columns"; columns:Array<{text:string;width:number;align:"left"|"right"}>; bold?:boolean }
+  | { type:"divider"; character:string } | { type:"feed"; lines:number }
+  | { type:"qrcode"; value:string; align:"left"|"center"|"right"; moduleSize:number; dataUrl?:string }
+  | { type:"logo"; align:"left"|"center"|"right"; widthMm:number }
+  | { type:"image"; data:Uint8Array; widthBytes:number; height:number; align:"left"|"center"|"right"; widthMm:number; dataUrl?:string };
 type Context = { shop: Shop; sale: Sale };
 const visible = (b: ReceiptBlock, c: Context) => b.visibleWhen === "always" ||
   (b.visibleWhen === "customer" && !!c.sale.customerSnapshot) || (b.visibleWhen === "tax" && c.sale.tax !== 0) ||
@@ -30,32 +33,29 @@ export function renderReceipt(template: ReceiptTemplate, context: Context): Rend
   for (const b of template.blocks.filter(x=>visible(x,context))) {
     if (b.spacingTop) out.push({type:"feed",lines:b.spacingTop});
     switch(b.type) {
-      case "logo": out.push({type:"logo"}); break;
+      case "logo": out.push({type:"logo",align:b.align,widthMm:Math.max(8,Math.min(template.printableWidthMm,Number(b.settings.widthMm||40)))}); break;
       case "shopName": out.push(text(context.shop.name,b)); break;
-      case "shopContact": out.push(text([...context.shop.addressLines,context.shop.phone,context.shop.email].filter(Boolean).join("\n"),b)); break;
+      case "shopContact": out.push(text(shopContactLines(context.shop).join("\n"),b)); break;
       case "customText": case "footer": case "terms": out.push(text(vars(b.text||"",context),b)); break;
       case "divider": out.push({type:"divider",character:String(b.settings.character||"-").slice(0,1)}); break;
-      case "metadata": out.push({type:"columns",columns:[{text:`Receipt ${context.sale.receiptNumber}`,width:24,align:"left"},{text:new Date(context.sale.createdAt).toLocaleString(context.shop.locale),width:24,align:"right"}]}); break;
+      case "metadata": {const metadata=receiptMetadata(context.sale,context.shop);out.push({type:"columns",columns:[{text:metadata.receipt,width:24,align:"left"},{text:metadata.dateTime,width:24,align:"right"}]});break;}
       case "datetime": out.push(text(new Date(context.sale.createdAt).toLocaleString(context.shop.locale),b)); break;
       case "receiptNumber": out.push(text(context.sale.receiptNumber,b)); break;
       case "customer": out.push(text([context.sale.customerSnapshot?.name?`Customer: ${context.sale.customerSnapshot.name}`:"",context.sale.customerSnapshot?.phone?`Phone: ${context.sale.customerSnapshot.phone}`:""].filter(Boolean).join("\n"),b)); break;
       case "items":
-        out.push({type:"columns",columns:[{text:"ITEM",width:30,align:"left"},{text:"TOTAL",width:18,align:"right"}]});
+        out.push({type:"columns",bold:true,columns:[{text:"ITEM",width:30,align:"left"},{text:"TOTAL",width:18,align:"right"}]});
         for(const i of context.sale.items) out.push({type:"columns",columns:[{text:`${i.name} × ${i.quantity}`,width:30,align:"left"},{text:m(i.lineTotal),width:18,align:"right"}]});
         break;
       case "totals":
         out.push({type:"columns",columns:[{text:"Subtotal",width:30,align:"left"},{text:m(context.sale.subtotal),width:18,align:"right"}]});
         if(context.sale.discount) out.push({type:"columns",columns:[{text:"Discount",width:30,align:"left"},{text:`-${m(context.sale.discount)}`,width:18,align:"right"}]});
         if(context.sale.tax) out.push({type:"columns",columns:[{text:"Tax",width:30,align:"left"},{text:m(context.sale.tax),width:18,align:"right"}]});
-        out.push({type:"columns",columns:[{text:"TOTAL",width:30,align:"left"},{text:m(context.sale.total),width:18,align:"right"}]}); break;
-      case "payment": out.push(text(`Paid by ${context.sale.paymentMethod.toUpperCase()}${context.sale.amountPaid!==undefined?`\nAmount paid: ${m(context.sale.amountPaid)}\nChange: ${m(context.sale.changeDue||0)}`:""}`,b)); break;
+        if(context.sale.pointDiscount) out.push({type:"columns",columns:[{text:"Points discount",width:30,align:"left"},{text:`-${m(context.sale.pointDiscount)}`,width:18,align:"right"}]});
+        out.push({type:"columns",bold:true,columns:[{text:"TOTAL",width:30,align:"left"},{text:m(context.sale.total),width:18,align:"right"}]}); break;
+      case "payment": out.push(text(receiptPaymentText(context.sale,context.shop),b)); break;
+      case "loyalty": out.push(text(receiptLoyaltyText(context.sale),b)); break;
       case "qrcode": {
-        const content=String(b.settings.content||"shopReceiptTotal");
-        const value=content==="receipt"?context.sale.receiptNumber:
-          content==="receiptTotal"?`Receipt: ${context.sale.receiptNumber}\nTotal: ${m(context.sale.total)}`:
-          content==="custom"?vars(b.text||"{{receipt.number}}",context):
-          `Shop: ${context.shop.name}\nReceipt: ${context.sale.receiptNumber}\nTotal: ${m(context.sale.total)}`;
-        out.push({type:"qrcode",value});break;
+        out.push({type:"qrcode",value:receiptQrValue(b,context.sale,context.shop),align:b.align,moduleSize:Math.max(1,Math.min(16,Number(b.settings.moduleSize||5)))});break;
       }
       case "barcode": out.push(text(String(b.settings.value||context.sale.receiptNumber),b)); break;
       case "spacer": out.push({type:"feed",lines:Number(b.settings.lines||1)}); break;
@@ -75,9 +75,9 @@ export function linesToHtml(lines:RenderLine[], width=48) {
   return lines.map(l=>{
     if(l.type==="feed") return `<div style="height:${l.lines*12}px"></div>`;
     if(l.type==="divider") return `<div>${esc(l.character.repeat(width))}</div>`;
-    if(l.type==="columns") return `<div style="display:flex;justify-content:space-between">${l.columns.map(c=>`<span>${esc(c.text)}</span>`).join("")}</div>`;
-    if(l.type==="qrcode") return l.dataUrl?`<div style="text-align:center"><img alt="QR code" src="${l.dataUrl}" style="width:32mm;height:32mm;image-rendering:pixelated"></div>`:`<div style="text-align:center">${esc(l.value)}</div>`;
-    if(l.type==="image") return l.dataUrl?`<div style="text-align:center"><img alt="" src="${l.dataUrl}" style="max-width:45mm;max-height:25mm;object-fit:contain"></div>`:"";
+    if(l.type==="columns") return `<div style="display:flex;justify-content:space-between;font-weight:${l.bold?700:400}">${l.columns.map(c=>`<span>${esc(c.text)}</span>`).join("")}</div>`;
+    if(l.type==="qrcode") return l.dataUrl?`<div style="text-align:${l.align}"><img alt="QR code" src="${l.dataUrl}" style="width:${l.moduleSize*5}mm;height:${l.moduleSize*5}mm;image-rendering:pixelated"></div>`:`<div style="text-align:${l.align}">${esc(l.value)}</div>`;
+    if(l.type==="image") return l.dataUrl?`<div style="text-align:${l.align}"><img alt="" src="${l.dataUrl}" style="width:${l.widthMm}mm;max-height:25mm;object-fit:contain"></div>`:"";
     if(l.type==="logo") return "";
     return wrapText(l.text,width).map(t=>`<div style="text-align:${l.align};font-weight:${l.bold?700:400};text-decoration:${l.underline?"underline":"none"};font-size:${l.size==="xlarge"?20:l.size==="large"?16:l.size==="small"?10:12}px">${esc(t)||"&nbsp;"}</div>`).join("");
   }).join("");

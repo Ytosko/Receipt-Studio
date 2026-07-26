@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Download, Edit3, Plus, Printer, Search, Tags, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Barcode, Download, Edit3, Plus, Printer, Search, Tags, Trash2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { formatMoney } from "../../shared/money";
-import { Empty, Modal, Stat } from "./components";
+import type { Shop } from "../../shared/schemas";
+import { DraftNumberInput, Empty, Modal, Stat } from "./components";
 import { CustomerForm, PrinterForm, ProductForm, ShopForm } from "./forms";
 import { useStore } from "./store";
 
@@ -76,11 +77,29 @@ export function EntityPage({ kind }: { kind: Kind }) {
   const [labelPrinterId, setLabelPrinterId] = useState("");
   const [labelTemplateId, setLabelTemplateId] = useState("");
   const [labelBusy, setLabelBusy] = useState(false);
-  const items = (store[kind] as any[]).filter(value => (value.name || value.phone || "").toLowerCase().includes(query.toLowerCase()));
+  const scanner = useRef({ value: "", started: 0, last: 0 });
+  const items = (store[kind] as any[]).filter(value => `${value.name||""} ${value.phone||""} ${value.sku||""} ${value.barcode||""} ${value.category||""}`.toLowerCase().includes(query.toLowerCase()));
   const shop = store.shops.find(value => value.id === store.settings.activeShopId) || store.shops[0];
   const labelPrinters = store.printers.filter(value => value.printerType === "label");
-  const productLabels = store.labels.filter(value => !value.shopId || value.shopId === shop?.id);
+  const productLabels = store.labels.filter(value => value.savedAt && (!value.shopId || value.shopId === shop?.id));
   const receiptTemplates = store.templates.filter(value => !shop || value.shopId === shop.id);
+  useEffect(()=>{
+    if(kind!=="products"||editing)return;
+    const onKey=(event:KeyboardEvent)=>{
+      const target=event.target as HTMLElement;if(["INPUT","TEXTAREA","SELECT"].includes(target.tagName)||target.isContentEditable)return;
+      const time=Date.now(),state=scanner.current;
+      if(event.key==="Enter"){
+        const fast=state.value.length>=4&&time-state.last<250&&time-state.started<3000,code=state.value;scanner.current={value:"",started:0,last:0};
+        if(!fast)return;
+        const match=store.products.find(product=>product.barcode?.toLowerCase()===code.toLowerCase());
+        if(match){event.preventDefault();setQuery(match.barcode||code)}
+        return;
+      }
+      if(event.key.length!==1)return;
+      if(time-state.last>250)scanner.current={value:event.key,started:time,last:time};else scanner.current={...state,value:state.value+event.key,last:time};
+    };
+    window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey);
+  },[kind,editing,store.products]);
 
   const save = async (value: any) => {
     await store.upsert(kind as any, value);
@@ -146,8 +165,8 @@ export function EntityPage({ kind }: { kind: Kind }) {
     <div className="surface">
       <div className="p-4 border-b flex justify-between">
         <div className="relative w-80">
-          <Search size={17} className="absolute left-3 top-3 text-[#7a8581] pointer-events-none" />
-          <input className="input !pl-10" placeholder={`Search ${kind}…`} value={query} onChange={event => setQuery(event.target.value)} />
+          {kind==="products"?<Barcode size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#39786e] pointer-events-none" />:<Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7a8581] pointer-events-none" />}
+          <input className="input !pl-10" placeholder={kind==="products"?"Search name, SKU or scan barcode…":`Search ${kind}…`} value={query} onChange={event => setQuery(event.target.value)} />
         </div>
         {kind === "products" && <div className="flex gap-2"><button className="btn"><Upload size={16} />Import CSV</button><button className="btn"><Download size={16} />Export CSV</button></div>}
       </div>
@@ -159,7 +178,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
             <tr>
               <th className="p-4">Name</th>
               <th className="p-4">{kind === "products" ? "Category" : kind === "printers" ? "Connection" : "Details"}</th>
-              <th className="p-4">{kind === "products" ? "Price / stock" : kind === "printers" ? "Paper" : "Updated"}</th>
+              <th className="p-4">{kind === "products" ? "Price / stock" : kind === "printers" ? "Paper" : kind === "customers" ? "Points" : "Updated"}</th>
               <th className="p-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -174,12 +193,14 @@ export function EntityPage({ kind }: { kind: Kind }) {
                 ? <><b>{formatMoney(value.price, shop.currency, shop.locale)}</b><div className="text-xs text-[#7d8784]">{value.stock} in stock</div></>
                 : kind === "printers"
                   ? value.printerType === "label" ? `${value.paperWidthMm} × ${value.paperHeightMm} mm` : `${value.paperWidthMm} mm`
+                  : kind === "customers"
+                    ? <b>{value.pointsBalance||0}</b>
                   : new Date(value.updatedAt).toLocaleDateString()}
             </td>
             <td className="p-4">
               <div className="flex justify-end gap-2">
                 {kind === "products" && productLabels.length > 0 && <button className="btn !py-1.5" onClick={() => openProductLabel(value)}><Printer size={15} />Print label</button>}
-                {kind === "printers" && <button className="btn !py-1.5" onClick={() => openPrinterTest(value)}>Print test</button>}
+                {kind === "printers" && (value.printerType === "receipt" || productLabels.length > 0) && <button className="btn !py-1.5" onClick={() => openPrinterTest(value)}>Print test</button>}
                 <button className="btn !p-2" onClick={() => setEditing(value)}><Edit3 size={15} /></button>
                 <button className="btn btn-danger !p-2" onClick={() => void remove(value.id)}><Trash2 size={15} /></button>
               </div>
@@ -192,7 +213,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
       {kind === "shops"
         ? <ShopForm value={editing.id ? editing : undefined} onSave={save} />
         : kind === "products"
-          ? <ProductForm value={editing.id ? editing : undefined} shopId={shop?.id} onSave={save} />
+          ? <ProductForm value={editing.id ? editing : undefined} shopId={shop?.id} products={store.products} onSave={save} />
           : kind === "customers"
             ? <CustomerForm value={editing.id ? editing : undefined} onSave={save} />
             : <PrinterForm value={editing.id ? editing : undefined} onSave={save} />}
@@ -247,13 +268,7 @@ export function SettingsPage() {
     <p className="text-sm font-bold text-[#ff5f73] uppercase tracking-widest">Application</p>
     <h1 className="text-3xl font-black mb-7">Settings</h1>
     <div className="surface divide-y">
-      <section className="p-6">
-        <h2 className="font-bold">Appearance</h2>
-        <p className="text-sm text-[#74807c] mb-4">Choose how Receipt Studio looks.</p>
-        <select className="input max-w-xs" value={store.settings.theme} onChange={event => void store.setSettings({ ...store.settings, theme: event.target.value as any })}>
-          <option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option>
-        </select>
-      </section>
+      {store.shops.length>0&&<LoyaltySettings shop={store.shops.find(value=>value.id===store.settings.activeShopId)||store.shops[0]} onSave={value=>store.upsert("shops",value)}/>}
       <section className="p-6">
         <h2 className="font-bold">Payment methods</h2>
         <p className="text-sm text-[#74807c] mb-4">These choices appear during checkout and on printed receipts.</p>
@@ -285,4 +300,22 @@ export function SettingsPage() {
       </section>
     </div>
   </div>;
+}
+
+function LoyaltySettings({shop,onSave}:{shop:Shop;onSave:(shop:Shop)=>void|Promise<void>}){
+  const [value,setValue]=useState(shop.loyalty);
+  const money=(amount:number)=>formatMoney(amount,shop.currency,shop.locale);
+  return <section className="p-6">
+    <h2 className="font-bold">Loyalty points</h2>
+    <p className="text-sm text-[#74807c] mb-4">Configure earning and redemption for {shop.name}. Point changes are recorded with each sale, refund, or replacement.</p>
+    <label className="flex items-center gap-2 mb-4"><input type="checkbox" checked={value.enabled} onChange={event=>setValue({...value,enabled:event.target.checked})}/> Enable loyalty points</label>
+    <div className="grid grid-cols-2 gap-4">
+      <label><span className="label">Spend amount ({shop.currency})</span><DraftNumberInput className="input" min=".01" step=".01" value={value.spendAmount/100} formatValue={amount=>amount.toFixed(2)} onValueChange={amount=>setValue({...value,spendAmount:Math.max(1,Math.round(amount*100))})}/></label>
+      <label><span className="label">Points awarded</span><DraftNumberInput className="input" min="1" step="1" value={value.pointsAwarded} onValueChange={amount=>setValue({...value,pointsAwarded:Math.max(1,Math.floor(amount))})}/></label>
+      <label><span className="label">Points to redeem</span><DraftNumberInput className="input" min="1" step="1" value={value.redemptionPoints} onValueChange={amount=>setValue({...value,redemptionPoints:Math.max(1,Math.floor(amount))})}/></label>
+      <label><span className="label">Redemption value ({shop.currency})</span><DraftNumberInput className="input" min=".01" step=".01" value={value.redemptionValue/100} formatValue={amount=>amount.toFixed(2)} onValueChange={amount=>setValue({...value,redemptionValue:Math.max(1,Math.round(amount*100))})}/></label>
+    </div>
+    <p className="text-xs text-[#68736f] mt-3">Current rule: spend {money(value.spendAmount)} to earn {value.pointsAwarded} point{value.pointsAwarded===1?"":"s"}; {value.redemptionPoints} point{value.redemptionPoints===1?"":"s"} equals {money(value.redemptionValue)}.</p>
+    <button className="btn btn-primary mt-4" onClick={async()=>{await onSave({...shop,loyalty:value,updatedAt:new Date().toISOString()});alert("Loyalty settings saved.")}}>Save loyalty settings</button>
+  </section>
 }

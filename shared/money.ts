@@ -14,3 +14,12 @@ export const formatMoney = (minor: number, currency = "USD", locale = "en-US") =
   new Intl.NumberFormat(currency === "BDT" ? "en-US" : locale, { style: "currency", currency, currencyDisplay: currency === "BDT" ? "code" : "symbol" })
     .format(minor / 100)
     .replace(/[\u00a0\u202f]/g, " ");
+
+export const normalizeMoneyInput = (input: string) => {
+  const cleaned = input.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  if (dot < 0) return cleaned;
+  const whole = cleaned.slice(0, dot) || "0";
+  const decimal = cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+  return `${whole}.${decimal}`;
+};

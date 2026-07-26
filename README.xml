@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project name="Receipt Studio" version="1.2.0" license="MIT">
+<project name="Receipt Studio" version="1.3.0" license="MIT">
   <summary>
     <branding>
       <name>Receipt Studio</name>
@@ -27,6 +27,12 @@
   <features>
     <feature>Multiple shops with locally stored logo assets</feature>
     <feature>Products, customers, completed sales, and immutable sale snapshots</feature>
+    <feature>USB keyboard-style barcode scanning for checkout and product management</feature>
+    <feature>Duplicate barcode prevention and stock validation at checkout</feature>
+    <feature>Per-shop loyalty earning and redemption rules</feature>
+    <feature>Receipt loyalty block with earned, redeemed, reversed, and balance values</feature>
+    <feature>Linked partial/full refunds with optional stock restoration</feature>
+    <feature>Linked product replacements with price-difference and inventory handling</feature>
     <feature>Structured drag-and-drop receipt template designer</feature>
     <feature>Clickable receipt sections with visible selection outlines</feature>
     <feature>Integer minor-unit money calculations</feature>
@@ -101,8 +107,8 @@
       <step>Create a GitHub Release and attach both executables.</step>
     </procedure>
     <artifacts>
-      <artifact>release/Receipt Studio-Setup-1.2.0-x64.exe</artifact>
-      <artifact>release/Receipt Studio-Portable-1.2.0-x64.exe</artifact>
+      <artifact>release/Receipt Studio-Setup-1.3.0-x64.exe</artifact>
+      <artifact>release/Receipt Studio-Portable-1.3.0-x64.exe</artifact>
     </artifacts>
     <signing>
       Release executables should be Authenticode-signed before public

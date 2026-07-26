@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { ReceiptTemplate, Sale, Shop } from "../../shared/schemas";
 import { formatMoney } from "../../shared/money";
+import { receiptLoyaltyText, receiptMetadata, receiptPaymentText, receiptQrValue, shopContactLines } from "../../shared/receiptContent";
 import QRCode from "qrcode";
-function RealQr({value}:{value:string}){const [src,setSrc]=useState("");useEffect(()=>{void QRCode.toDataURL(value,{errorCorrectionLevel:"M",margin:1,width:220}).then(setSrc)},[value]);return src?<img src={src} alt="Scannable receipt QR code" className="w-28 h-28 mx-auto [image-rendering:pixelated]"/>:<div className="w-28 h-28 mx-auto bg-gray-100 animate-pulse"/>}
+function RealQr({value,size}:{value:string;size:number}){const [src,setSrc]=useState("");useEffect(()=>{void QRCode.toDataURL(value,{errorCorrectionLevel:"M",margin:1,width:220}).then(setSrc)},[value]);return src?<img src={src} alt="Scannable receipt QR code" style={{width:size,height:size}} className="inline-block [image-rendering:pixelated]"/>:<div style={{width:size,height:size}} className="inline-block bg-gray-100 animate-pulse"/>}
 export function ReceiptPreview({template,sale,shop,selectedBlockId,onSelectBlock}:{template?:ReceiptTemplate;sale:Partial<Sale>;shop?:Shop;selectedBlockId?:string;onSelectBlock?:(id:string)=>void}){
   const [logo,setLogo]=useState("");
   useEffect(()=>{if(shop?.logoAssetId)void window.receiptStudio.readShopLogo(shop.logoAssetId).then(setLogo).catch(()=>setLogo(""));else setLogo("")},[shop?.logoAssetId]);
@@ -15,16 +16,17 @@ export function ReceiptPreview({template,sale,shop,selectedBlockId,onSelectBlock
       const style={textAlign:b.align,fontWeight:b.bold?700:400,textDecoration:b.underline?"underline":"none",fontSize:b.size==="xlarge"?20:b.size==="large"?16:b.size==="small"?10:12,marginTop:b.spacingTop*4,marginBottom:b.spacingBottom*4} as const;
       let content:ReactNode=null;
       switch(b.type){
-        case"logo":content=logo?<div style={style}><img src={logo} alt="" className="max-w-[140px] max-h-[80px] object-contain inline-block"/></div>:<div style={style} className="text-[10px] text-gray-400">Logo (not configured)</div>;break;
+        case"logo":{const widthMm=Math.max(8,Math.min(template?.printableWidthMm||72,Number(b.settings.widthMm||40)));content=logo?<div style={style}><img src={logo} alt="" style={{width:widthMm*3.7}} className="max-h-[100px] object-contain inline-block grayscale contrast-200"/></div>:<div style={style} className="text-[10px] text-gray-400">Logo (not configured)</div>;break;}
         case"shopName":content=<div style={style}>{shop.name}</div>;break;
-        case"shopContact":content=<div style={style}>{shop.addressLines.map((x,i)=><div key={i}>{x}</div>)}<div>{shop.phone}</div></div>;break;
+        case"shopContact":content=<div style={style}>{shopContactLines(shop).map((value,index)=><div key={index}>{value}</div>)}</div>;break;
         case"divider":content=<div className="overflow-hidden whitespace-nowrap">------------------------------------------------</div>;break;
-        case"metadata":content=<div className="flex justify-between"><span>#{sale.receiptNumber||"DRAFT"}</span><span>{new Date().toLocaleDateString()}</span></div>;break;
+        case"metadata":{const metadata=receiptMetadata(sale,shop);content=<div className="flex justify-between"><span>{metadata.receipt}</span><span>{metadata.dateTime}</span></div>;break;}
         case"customer":content=<div>{sale.customerSnapshot?.name&&<div>Customer: {sale.customerSnapshot.name}</div>}{sale.customerSnapshot?.phone&&<div>Phone: {sale.customerSnapshot.phone}</div>}</div>;break;
         case"items":content=<div className="my-2"><div className="flex font-bold justify-between"><span>ITEM</span><span>TOTAL</span></div>{sale.items?.map(i=><div className="flex justify-between" key={i.id}><span className="max-w-[190px]">{i.name} × {i.quantity}</span><span>{money(i.lineTotal)}</span></div>)}</div>;break;
-        case"totals":content=<div className="my-2">{[["Subtotal",sale.subtotal],...(sale.discount?[["Discount",-sale.discount]]:[]),...(sale.tax?[["Tax",sale.tax]]:[])].map(([l,v])=><div className="flex justify-between" key={String(l)}><span>{l}</span><span>{money(Number(v))}</span></div>)}<div className="flex justify-between text-base font-bold mt-1"><span>TOTAL</span><span>{money(sale.total)}</span></div></div>;break;
-        case"payment":content=<div style={style}>Paid by {sale.paymentMethod||"cash"}</div>;break;
-        case"qrcode":{const mode=String(b.settings.content||"shopReceiptTotal"),receipt=sale.receiptNumber||"DRAFT",value=mode==="receipt"?receipt:mode==="receiptTotal"?`Receipt: ${receipt}\nTotal: ${money(sale.total)}`:mode==="custom"?(b.text||"{{receipt.number}}").replace(/\{\{receipt\.number\}\}/g,receipt).replace(/\{\{sale\.total\}\}/g,money(sale.total)).replace(/\{\{shop\.name\}\}/g,shop.name):`Shop: ${shop.name}\nReceipt: ${receipt}\nTotal: ${money(sale.total)}`;content=<div className="text-center my-2"><RealQr value={value}/></div>;break;}
+        case"totals":content=<div className="my-2">{[["Subtotal",sale.subtotal],...(sale.discount?[["Discount",-sale.discount]]:[]),...(sale.tax?[["Tax",sale.tax]]:[]),...(sale.pointDiscount?[["Points discount",-sale.pointDiscount]]:[])].map(([l,v])=><div className="flex justify-between" key={String(l)}><span>{l}</span><span>{money(Number(v))}</span></div>)}<div className="flex justify-between text-base font-bold mt-1"><span>TOTAL</span><span>{money(sale.total)}</span></div></div>;break;
+        case"payment":content=<div style={style}>{receiptPaymentText(sale,shop).split("\n").map((value,index)=><div key={index}>{value}</div>)}</div>;break;
+        case"loyalty":content=<div style={style}>{receiptLoyaltyText(sale).split("\n").map((value,index)=><div key={index}>{value}</div>)}</div>;break;
+        case"qrcode":{const moduleSize=Math.max(1,Math.min(16,Number(b.settings.moduleSize||5)));content=<div style={{textAlign:b.align}} className="my-2"><RealQr value={receiptQrValue(b,sale,shop)} size={moduleSize*17}/></div>;break;}
         case"spacer":content=<div style={{height:Number(b.settings.lines||1)*10}}/>;break;
         case"footer":case"customText":case"terms":content=<div style={style}>{b.text}</div>;break;
         default:content=<div className="text-[10px] text-gray-400">{b.type}</div>;

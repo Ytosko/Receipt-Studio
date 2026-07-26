@@ -1,32 +1,589 @@
 import { useEffect, useState } from "react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Plus, Redo2, Save, Trash2, Undo2 } from "lucide-react";
 import type { ReceiptBlock, ReceiptTemplate, Sale } from "../../shared/schemas";
 import { starterTemplate } from "../../shared/defaults";
-import { Empty, Field } from "./components";
+import { DraftNumberInput, Empty, Field } from "./components";
 import { ReceiptPreview } from "./receiptPreview";
 import { useStore } from "./store";
-const blockLabels:Record<ReceiptBlock["type"],string>={logo:"Shop logo",shopName:"Shop name",shopContact:"Contact details",customText:"Custom text",metadata:"Receipt metadata",customer:"Customer details",items:"Items table",totals:"Totals",payment:"Payment details",divider:"Divider",spacer:"Spacer",barcode:"Barcode",qrcode:"QR code",footer:"Footer message",terms:"Terms text",datetime:"Date & time",receiptNumber:"Receipt number",labelValue:"Label / value"};
-function SortableBlock({b,active,onClick}:{b:ReceiptBlock;active:boolean;onClick:()=>void}){const d=useSortable({id:b.id});return <button ref={d.setNodeRef} style={{transform:CSS.Transform.toString(d.transform),transition:d.transition}} {...d.attributes} onClick={onClick} className={`w-full flex items-center gap-2 p-3 rounded-xl border text-left bg-white ${active?"border-[#6b25e9] ring-2 ring-[#6b25e920]":"border-[#deded6]"}`}><span {...d.listeners} className="cursor-grab"><GripVertical size={16}/></span><span className="text-sm font-bold">{blockLabels[b.type]}</span></button>}
-export function TemplatePage(){
- const s=useStore(),shop=s.shops.find(x=>x.id===s.settings.activeShopId)||s.shops[0],existing=s.templates.filter(x=>x.shopId===shop?.id),[selectedId,setSelectedId]=useState(existing[0]?.id||""),[draft,setDraft]=useState<ReceiptTemplate|undefined>(existing[0]),[selectedBlock,setSelectedBlock]=useState(""),[history,setHistory]=useState<ReceiptTemplate[]>([]),[future,setFuture]=useState<ReceiptTemplate[]>([]),[saved,setSaved]=useState(true);
- const upsertTemplate=s.upsert;
- useEffect(()=>{const t=useStore.getState().templates.find(x=>x.id===selectedId);if(t){setDraft(t);setHistory([]);setFuture([]);setSaved(true)}},[selectedId]);
- useEffect(()=>{
-   if(saved||!draft)return;
-   const timer=window.setTimeout(()=>{const value={...draft,updatedAt:new Date().toISOString()};void upsertTemplate("templates",value).then(()=>{setDraft(value);setSaved(true)})},700);
-   return()=>window.clearTimeout(timer);
- },[draft,saved,upsertTemplate]);
- const mutate=(fn:(d:ReceiptTemplate)=>ReceiptTemplate)=>{if(!draft)return;setHistory(h=>[...h,draft]);setFuture([]);setDraft(fn(draft));setSaved(false)};
- const add=(type:ReceiptBlock["type"])=>{if(!draft)return;const b:ReceiptBlock={id:crypto.randomUUID(),type,align:"left",bold:false,underline:false,size:"normal",spacingTop:0,spacingBottom:0,visibleWhen:"always",settings:{},text:["customText","footer","terms"].includes(type)?"Your text here":undefined};mutate(d=>({...d,blocks:[...d.blocks,b]}));setSelectedBlock(b.id)};
- const active=draft?.blocks.find(x=>x.id===selectedBlock),sample:Sale={id:"sample",shopId:shop?.id||"",templateId:draft?.id||"",receiptNumber:"SAMPLE-001",items:[{id:"1",name:"House Blend Coffee",quantity:2,unitPrice:450,discount:0,taxRate:5,lineSubtotal:900,lineTax:45,lineTotal:945},{id:"2",name:"Canvas Tote",quantity:1,unitPrice:1200,discount:0,taxRate:5,lineSubtotal:1200,lineTax:60,lineTotal:1260}],subtotal:2100,discount:100,tax:105,total:2105,paymentMethod:"cash",amountPaid:2500,changeDue:395,customerSnapshot:{name:"Alex Morgan"},status:"completed",printStatus:"not_printed",createdAt:new Date().toISOString()};
- if(!shop)return <Empty title="Create a shop first" detail="Receipt templates belong to a shop."/>;
- const create=async()=>{const t=starterTemplate(shop.id);t.name=`Template ${existing.length+1}`;await s.upsert("templates",t);setSelectedId(t.id)};
- if(!draft)return <Empty title="No receipt templates" detail="Start with a polished 80 mm receipt and customize every block." action={<button className="btn btn-primary" onClick={()=>void create()}><Plus size={16}/>Create starter template</button>}/>;
- const end=(e:DragEndEvent)=>{if(e.over&&e.active.id!==e.over.id)mutate(d=>{const a=d.blocks.findIndex(x=>x.id===e.active.id),b=d.blocks.findIndex(x=>x.id===e.over!.id);return{...d,blocks:arrayMove(d.blocks,a,b)}})};
- return <div className="-m-7 h-[calc(100%+3.5rem)] min-h-[720px] flex flex-col"><div className="h-16 bg-white border-b flex items-center px-5 gap-3"><select className="input !w-52" value={selectedId} onChange={e=>setSelectedId(e.target.value)}>{existing.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select><input className="input !w-64 font-bold" value={draft.name} onChange={e=>mutate(d=>({...d,name:e.target.value}))}/><span className={`text-xs ${saved?"text-[#568178]":"text-[#b07b29]"}`}>{saved?"Saved locally":"Autosaving…"}</span><div className="ml-auto flex gap-2"><button className="btn !p-2" disabled={!history.length} onClick={()=>{if(!history.length)return;setFuture(f=>[draft,...f]);setDraft(history.at(-1));setHistory(h=>h.slice(0,-1));setSaved(false)}}><Undo2 size={16}/></button><button className="btn !p-2" disabled={!future.length} onClick={()=>{if(!future.length)return;setHistory(h=>[...h,draft]);setDraft(future[0]);setFuture(f=>f.slice(1));setSaved(false)}}><Redo2 size={16}/></button><button className="btn" onClick={()=>void create()}><Plus size={16}/>New</button><button className="btn btn-primary" onClick={async()=>{const value={...draft,updatedAt:new Date().toISOString()};await s.upsert("templates",value);setDraft(value);setSaved(true)}}><Save size={16}/>Save</button></div></div>
-  <div className="flex-1 grid grid-cols-[230px_1fr_290px] min-h-0"><aside className="bg-[#f7f6f1] border-r p-4 overflow-auto"><p className="label mb-3">Block palette</p><div className="grid gap-2">{Object.entries(blockLabels).map(([type,label])=><button key={type} className="btn justify-start !py-2 text-sm" onClick={()=>add(type as ReceiptBlock["type"])}><Plus size={14}/>{label}</button>)}</div></aside><section className="bg-[#d8d8d0] overflow-auto p-8"><div className="flex gap-8 justify-center items-start"><div className="w-[260px] space-y-2"><p className="label">Document structure</p><DndContext collisionDetection={closestCenter} onDragEnd={end}><SortableContext items={draft.blocks.map(b=>b.id)} strategy={verticalListSortingStrategy}>{draft.blocks.map(b=><SortableBlock key={b.id} b={b} active={b.id===selectedBlock} onClick={()=>setSelectedBlock(b.id)}/>)}</SortableContext></DndContext></div><ReceiptPreview template={draft} sale={sample} shop={shop} selectedBlockId={selectedBlock} onSelectBlock={setSelectedBlock}/></div></section><aside className="bg-white border-l p-5 overflow-auto">{active?<><div className="flex justify-between mb-5"><div><p className="label">Selected block</p><h2 className="font-bold">{blockLabels[active.type]}</h2></div><button className="btn btn-danger !p-2" onClick={()=>mutate(d=>({...d,blocks:d.blocks.filter(b=>b.id!==active.id)}))}><Trash2 size={15}/></button></div><div className="space-y-4">{["customText","footer","terms","labelValue"].includes(active.type)&&<Field label="Text"><textarea className="input" value={active.text||""} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,text:e.target.value}:b)}))}/></Field>}{active.type==="qrcode"&&<><Field label="QR code content"><select className="input" value={String(active.settings.content||"shopReceiptTotal")} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,settings:{...b.settings,content:e.target.value}}:b)}))}><option value="receipt">Receipt number</option><option value="receiptTotal">Receipt number and total</option><option value="shopReceiptTotal">Shop, receipt number and total</option><option value="custom">Custom variables</option></select></Field>{active.settings.content==="custom"&&<Field label="Custom QR value"><textarea className="input" value={active.text||"{{shop.name}} | {{receipt.number}} | {{sale.total}}"} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,text:e.target.value}:b)}))}/><p className="text-xs text-[#74807c] mt-1">Variables: {"{{shop.name}}"}, {"{{receipt.number}}"}, {"{{sale.total}}"}</p></Field>}</>}<Field label="Alignment"><select className="input" value={active.align} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,align:e.target.value as any}:b)}))}><option>left</option><option>center</option><option>right</option></select></Field><Field label="Font size"><select className="input" value={active.size} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,size:e.target.value as any}:b)}))}><option>small</option><option>normal</option><option>large</option><option>xlarge</option></select></Field><Field label="Visibility"><select className="input" value={active.visibleWhen} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,visibleWhen:e.target.value as any}:b)}))}><option value="always">Always</option><option value="customer">When customer exists</option><option value="tax">When tax is non-zero</option><option value="discount">When discount is non-zero</option><option value="note">When note exists</option><option value="payment">When payment entered</option></select></Field><label className="flex gap-2"><input type="checkbox" checked={active.bold} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,bold:e.target.checked}:b)}))}/>Bold</label><label className="flex gap-2"><input type="checkbox" checked={active.underline} onChange={e=>mutate(d=>({...d,blocks:d.blocks.map(b=>b.id===active.id?{...b,underline:e.target.checked}:b)}))}/>Underline</label></div></>:<div className="text-center text-sm text-[#78827f] mt-20">Select a block in the document structure or directly on the receipt preview.</div>}</aside></div>
- </div>
+const blockLabels: Record<ReceiptBlock["type"], string> = {
+  logo: "Shop logo",
+  shopName: "Shop name",
+  shopContact: "Contact details",
+  customText: "Custom text",
+  metadata: "Receipt metadata",
+  customer: "Customer details",
+  items: "Items table",
+  totals: "Totals",
+  payment: "Payment details",
+  loyalty: "Loyalty points",
+  divider: "Divider",
+  spacer: "Spacer",
+  barcode: "Barcode",
+  qrcode: "QR code",
+  footer: "Footer message",
+  terms: "Terms text",
+  datetime: "Date & time",
+  receiptNumber: "Receipt number",
+  labelValue: "Label / value",
+};
+function SortableBlock({
+  b,
+  active,
+  onClick,
+}: {
+  b: ReceiptBlock;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const d = useSortable({ id: b.id });
+  return (
+    <button
+      ref={d.setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(d.transform),
+        transition: d.transition,
+      }}
+      {...d.attributes}
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 p-3 rounded-xl border text-left bg-white ${active ? "border-[#6b25e9] ring-2 ring-[#6b25e920]" : "border-[#deded6]"}`}
+    >
+      <span {...d.listeners} className="cursor-grab">
+        <GripVertical size={16} />
+      </span>
+      <span className="text-sm font-bold">{blockLabels[b.type]}</span>
+    </button>
+  );
+}
+export function TemplatePage() {
+  const s = useStore(),
+    shop = s.shops.find((x) => x.id === s.settings.activeShopId) || s.shops[0],
+    existing = s.templates.filter((x) => x.shopId === shop?.id),
+    [selectedId, setSelectedId] = useState(existing[0]?.id || ""),
+    [draft, setDraft] = useState<ReceiptTemplate | undefined>(existing[0]),
+    [selectedBlock, setSelectedBlock] = useState(""),
+    [history, setHistory] = useState<ReceiptTemplate[]>([]),
+    [future, setFuture] = useState<ReceiptTemplate[]>([]),
+    [saved, setSaved] = useState(true);
+  const upsertTemplate = s.upsert;
+  useEffect(() => {
+    const t = useStore.getState().templates.find((x) => x.id === selectedId);
+    if (t) {
+      setDraft(t);
+      setHistory([]);
+      setFuture([]);
+      setSaved(true);
+    }
+  }, [selectedId]);
+  useEffect(() => {
+    if (saved || !draft) return;
+    const timer = window.setTimeout(() => {
+      const value = { ...draft, updatedAt: new Date().toISOString() };
+      void upsertTemplate("templates", value).then(() => {
+        setDraft(value);
+        setSaved(true);
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [draft, saved, upsertTemplate]);
+  const mutate = (fn: (d: ReceiptTemplate) => ReceiptTemplate) => {
+    if (!draft) return;
+    setHistory((h) => [...h, draft]);
+    setFuture([]);
+    setDraft(fn(draft));
+    setSaved(false);
+  };
+  const add = (type: ReceiptBlock["type"]) => {
+    if (!draft) return;
+    const b: ReceiptBlock = {
+      id: crypto.randomUUID(),
+      type,
+      align: "left",
+      bold: false,
+      underline: false,
+      size: "normal",
+      spacingTop: 0,
+      spacingBottom: 0,
+      visibleWhen: "always",
+      settings: {},
+      text: ["customText", "footer", "terms"].includes(type)
+        ? "Your text here"
+        : undefined,
+    };
+    mutate((d) => ({ ...d, blocks: [...d.blocks, b] }));
+    setSelectedBlock(b.id);
+  };
+  const active = draft?.blocks.find((x) => x.id === selectedBlock),
+    sample: Sale = {
+      id: "sample",
+      shopId: shop?.id || "",
+      templateId: draft?.id || "",
+      receiptNumber: "SAMPLE-001",
+      items: [
+        {
+          id: "1",
+          name: "House Blend Coffee",
+          quantity: 2,
+          unitPrice: 450,
+          discount: 0,
+          taxRate: 5,
+          lineSubtotal: 900,
+          lineTax: 45,
+          lineTotal: 945,
+        },
+        {
+          id: "2",
+          name: "Canvas Tote",
+          quantity: 1,
+          unitPrice: 1200,
+          discount: 0,
+          taxRate: 5,
+          lineSubtotal: 1200,
+          lineTax: 60,
+          lineTotal: 1260,
+        },
+      ],
+      subtotal: 2100,
+      discount: 100,
+      tax: 105,
+      total: 2105,
+      paymentMethod: "cash",
+      amountPaid: 2500,
+      changeDue: 395,
+      customerSnapshot: { name: "Alex Morgan" },
+      status: "completed",
+      transactionType: "sale",
+      returnedItems: [],
+      pointsEarned: 4,
+      pointsRedeemed: 2,
+      pointsReversed: 0,
+      pointDiscount: 200,
+      pointsBalanceAfter: 12,
+      printStatus: "not_printed",
+      createdAt: new Date().toISOString(),
+    };
+  if (!shop)
+    return (
+      <Empty
+        title="Create a shop first"
+        detail="Receipt templates belong to a shop."
+      />
+    );
+  const create = async () => {
+    const t = starterTemplate(shop.id);
+    t.name = `Template ${existing.length + 1}`;
+    await s.upsert("templates", t);
+    setSelectedId(t.id);
+  };
+  if (!draft)
+    return (
+      <Empty
+        title="No receipt templates"
+        detail="Start with a polished 80 mm receipt and customize every block."
+        action={
+          <button className="btn btn-primary" onClick={() => void create()}>
+            <Plus size={16} />
+            Create starter template
+          </button>
+        }
+      />
+    );
+  const end = (e: DragEndEvent) => {
+    if (e.over && e.active.id !== e.over.id)
+      mutate((d) => {
+        const a = d.blocks.findIndex((x) => x.id === e.active.id),
+          b = d.blocks.findIndex((x) => x.id === e.over!.id);
+        return { ...d, blocks: arrayMove(d.blocks, a, b) };
+      });
+  };
+  return (
+    <div className="-m-7 h-[calc(100%+3.5rem)] min-h-[720px] flex flex-col">
+      <div className="h-16 bg-white border-b flex items-center px-5 gap-3">
+        <select
+          className="input !w-52"
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+        >
+          {existing.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input !w-64 font-bold"
+          value={draft.name}
+          onChange={(e) => mutate((d) => ({ ...d, name: e.target.value }))}
+        />
+        <span
+          className={`text-xs ${saved ? "text-[#568178]" : "text-[#b07b29]"}`}
+        >
+          {saved ? "Saved locally" : "Autosaving…"}
+        </span>
+        <div className="ml-auto flex gap-2">
+          <button
+            className="btn !p-2"
+            disabled={!history.length}
+            onClick={() => {
+              if (!history.length) return;
+              setFuture((f) => [draft, ...f]);
+              setDraft(history.at(-1));
+              setHistory((h) => h.slice(0, -1));
+              setSaved(false);
+            }}
+          >
+            <Undo2 size={16} />
+          </button>
+          <button
+            className="btn !p-2"
+            disabled={!future.length}
+            onClick={() => {
+              if (!future.length) return;
+              setHistory((h) => [...h, draft]);
+              setDraft(future[0]);
+              setFuture((f) => f.slice(1));
+              setSaved(false);
+            }}
+          >
+            <Redo2 size={16} />
+          </button>
+          <button className="btn" onClick={() => void create()}>
+            <Plus size={16} />
+            New
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              const value = { ...draft, updatedAt: new Date().toISOString() };
+              await s.upsert("templates", value);
+              setDraft(value);
+              setSaved(true);
+            }}
+          >
+            <Save size={16} />
+            Save
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 grid grid-cols-[230px_1fr_290px] min-h-0">
+        <aside className="bg-[#f7f6f1] border-r p-4 overflow-auto">
+          <p className="label mb-3">Block palette</p>
+          <div className="grid gap-2">
+            {Object.entries(blockLabels).map(([type, label]) => (
+              <button
+                key={type}
+                className="btn justify-start !py-2 text-sm"
+                onClick={() => add(type as ReceiptBlock["type"])}
+              >
+                <Plus size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </aside>
+        <section className="bg-[#d8d8d0] overflow-auto p-8">
+          <div className="flex gap-8 justify-center items-start">
+            <div className="w-[260px] space-y-2">
+              <p className="label">Document structure</p>
+              <DndContext collisionDetection={closestCenter} onDragEnd={end}>
+                <SortableContext
+                  items={draft.blocks.map((b) => b.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {draft.blocks.map((b) => (
+                    <SortableBlock
+                      key={b.id}
+                      b={b}
+                      active={b.id === selectedBlock}
+                      onClick={() => setSelectedBlock(b.id)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+            <ReceiptPreview
+              template={draft}
+              sale={sample}
+              shop={shop}
+              selectedBlockId={selectedBlock}
+              onSelectBlock={setSelectedBlock}
+            />
+          </div>
+        </section>
+        <aside className="bg-white border-l p-5 overflow-auto">
+          {active ? (
+            <>
+              <div className="flex justify-between mb-5">
+                <div>
+                  <p className="label">Selected block</p>
+                  <h2 className="font-bold">{blockLabels[active.type]}</h2>
+                </div>
+                <button
+                  className="btn btn-danger !p-2"
+                  onClick={() =>
+                    mutate((d) => ({
+                      ...d,
+                      blocks: d.blocks.filter((b) => b.id !== active.id),
+                    }))
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {active.type === "logo" && (
+                  <Field label="Printed logo width">
+                    <div className="flex items-center gap-2">
+                      <DraftNumberInput
+                        className="input"
+                        min="8"
+                        max={draft.printableWidthMm}
+                        step="1"
+                        value={Number(active.settings.widthMm || 40)}
+                        onValueChange={(value) =>
+                          mutate((d) => ({
+                            ...d,
+                            blocks: d.blocks.map((b) =>
+                              b.id === active.id
+                                ? {
+                                    ...b,
+                                    settings: {
+                                      ...b.settings,
+                                      widthMm: value,
+                                    },
+                                  }
+                                : b,
+                            ),
+                          }))
+                        }
+                      />
+                      <span className="text-xs text-[#74807c]">mm</span>
+                    </div>
+                  </Field>
+                )}
+                {["customText", "footer", "terms", "labelValue"].includes(
+                  active.type,
+                ) && (
+                  <Field label="Text">
+                    <textarea
+                      className="input"
+                      value={active.text || ""}
+                      onChange={(e) =>
+                        mutate((d) => ({
+                          ...d,
+                          blocks: d.blocks.map((b) =>
+                            b.id === active.id
+                              ? { ...b, text: e.target.value }
+                              : b,
+                          ),
+                        }))
+                      }
+                    />
+                  </Field>
+                )}
+                {active.type === "qrcode" && (
+                  <>
+                    <Field label="QR code content">
+                      <select
+                        className="input"
+                        value={String(
+                          active.settings.content || "shopReceiptTotal",
+                        )}
+                        onChange={(e) =>
+                          mutate((d) => ({
+                            ...d,
+                            blocks: d.blocks.map((b) =>
+                              b.id === active.id
+                                ? {
+                                    ...b,
+                                    settings: {
+                                      ...b.settings,
+                                      content: e.target.value,
+                                    },
+                                  }
+                                : b,
+                            ),
+                          }))
+                        }
+                      >
+                        <option value="receipt">Receipt number</option>
+                        <option value="receiptTotal">
+                          Receipt number and total
+                        </option>
+                        <option value="shopReceiptTotal">
+                          Shop, receipt number and total
+                        </option>
+                        <option value="custom">Custom variables</option>
+                      </select>
+                    </Field>
+                    {active.settings.content === "custom" && (
+                      <Field label="Custom QR value">
+                        <textarea
+                          className="input"
+                          value={
+                            active.text ||
+                            "{{shop.name}} | {{receipt.number}} | {{sale.total}}"
+                          }
+                          onChange={(e) =>
+                            mutate((d) => ({
+                              ...d,
+                              blocks: d.blocks.map((b) =>
+                                b.id === active.id
+                                  ? { ...b, text: e.target.value }
+                                  : b,
+                              ),
+                            }))
+                          }
+                        />
+                        <p className="text-xs text-[#74807c] mt-1">
+                          Variables: {"{{shop.name}}"}, {"{{receipt.number}}"},{" "}
+                          {"{{sale.total}}"}
+                        </p>
+                      </Field>
+                    )}
+                    <Field label="Printed QR size">
+                      <select
+                        className="input"
+                        value={Number(active.settings.moduleSize || 5)}
+                        onChange={(e) =>
+                          mutate((d) => ({
+                            ...d,
+                            blocks: d.blocks.map((b) =>
+                              b.id === active.id
+                                ? {
+                                    ...b,
+                                    settings: {
+                                      ...b.settings,
+                                      moduleSize: Number(e.target.value),
+                                    },
+                                  }
+                                : b,
+                            ),
+                          }))
+                        }
+                      >
+                        <option value="3">Small</option>
+                        <option value="5">Medium</option>
+                        <option value="7">Large</option>
+                      </select>
+                    </Field>
+                  </>
+                )}
+                <Field label="Alignment">
+                  <select
+                    className="input"
+                    value={active.align}
+                    onChange={(e) =>
+                      mutate((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) =>
+                          b.id === active.id
+                            ? { ...b, align: e.target.value as any }
+                            : b,
+                        ),
+                      }))
+                    }
+                  >
+                    <option>left</option>
+                    <option>center</option>
+                    <option>right</option>
+                  </select>
+                </Field>
+                <Field label="Font size">
+                  <select
+                    className="input"
+                    value={active.size}
+                    onChange={(e) =>
+                      mutate((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) =>
+                          b.id === active.id
+                            ? { ...b, size: e.target.value as any }
+                            : b,
+                        ),
+                      }))
+                    }
+                  >
+                    <option>small</option>
+                    <option>normal</option>
+                    <option>large</option>
+                    <option>xlarge</option>
+                  </select>
+                </Field>
+                <Field label="Visibility">
+                  <select
+                    className="input"
+                    value={active.visibleWhen}
+                    onChange={(e) =>
+                      mutate((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) =>
+                          b.id === active.id
+                            ? { ...b, visibleWhen: e.target.value as any }
+                            : b,
+                        ),
+                      }))
+                    }
+                  >
+                    <option value="always">Always</option>
+                    <option value="customer">When customer exists</option>
+                    <option value="tax">When tax is non-zero</option>
+                    <option value="discount">When discount is non-zero</option>
+                    <option value="note">When note exists</option>
+                    <option value="payment">When payment entered</option>
+                  </select>
+                </Field>
+                <label className="flex gap-2">
+                  <input
+                    type="checkbox"
+                    checked={active.bold}
+                    onChange={(e) =>
+                      mutate((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) =>
+                          b.id === active.id
+                            ? { ...b, bold: e.target.checked }
+                            : b,
+                        ),
+                      }))
+                    }
+                  />
+                  Bold
+                </label>
+                <label className="flex gap-2">
+                  <input
+                    type="checkbox"
+                    checked={active.underline}
+                    onChange={(e) =>
+                      mutate((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) =>
+                          b.id === active.id
+                            ? { ...b, underline: e.target.checked }
+                            : b,
+                        ),
+                      }))
+                    }
+                  />
+                  Underline
+                </label>
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-sm text-[#78827f] mt-20">
+              Select a block in the document structure or directly on the
+              receipt preview.
+            </div>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
 }

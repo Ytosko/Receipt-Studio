@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("receiptStudio",{
   upsert:(collection:string,entity:unknown)=>invoke("data:upsert",{collection,entity}),
   remove:(collection:string,id:string)=>invoke("data:remove",{collection,id}),
   completeSale:(sale:unknown,print:boolean)=>invoke("sale:complete",{sale,print}),
+  refundSale:(request:unknown)=>invoke("sale:refund",request),
+  replaceSale:(request:unknown)=>invoke("sale:replace",request),
   printSale:(saleId:string)=>invoke("print:sale",{saleId}),
   testPrinter:(printerId:string)=>invoke("print:test",{printerId}),
   printTemplateTest:(printerId:string,templateId:string)=>invoke("print:template-test",{printerId,templateId}),

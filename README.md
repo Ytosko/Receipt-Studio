@@ -27,6 +27,10 @@ An XML-formatted project and release reference is available in [`README.xml`](RE
 
 Receipt Studio also supports fixed-size product-label design and printing. Label profiles can use Windows-installed USB printers or raw network ZPL/TSPL printers. Included media presets are 4×6, 4×4, 3×2, 2×1.5, and 2×1 inches plus common metric sizes. Width and height can always be entered manually for custom sheets. Label printers are intentionally separate from POS receipt printers.
 
+USB barcode scanners work directly as keyboard-style input devices. On New Sale and the Products list, scanning works without clicking the search box; an exact barcode followed by Enter adds or finds the product. In Add/Edit Product, use the scanner button beside Barcode so the form knows where to place the scanned value. Duplicate product barcodes are rejected.
+
+Per-shop loyalty rules define how spending earns points and how points convert to a checkout discount. Each sale records points earned, redeemed, reversed, and the resulting balance. The receipt designer includes an optional **Loyalty points** block. Sales History supports item-level refunds and replacements; these create new linked transactions, preserve the original receipt, update stock, and reverse applicable points.
+
 ## Product website
 
 Explore the product, printer options, label designer, and latest Windows download at [reciept-printer.ytosko.dev](https://reciept-printer.ytosko.dev/).
@@ -71,9 +75,19 @@ Data is stored as readable, validated JSON under Electron's `userData/data` dire
 
 Use **Settings → Export backup** to copy a complete backup folder. **Import backup** validates every collection before replacement and creates a safety backup. To reset safely, close the application, export or copy the entire user-data folder, then rename the original folder; do not delete it until the replacement starts correctly.
 
-## Rongta RP336UV network setup
+## Barcode, inventory, loyalty, and returns
 
-The first launch creates a profile for `192.168.68.68:9100`, 80 mm paper, 72 mm printable width, 48 characters per line, CP437, automatic cut, four feed lines, and a 5000 ms timeout. Edit all values on **Printers**.
+Receipt Studio supports common USB barcode scanners without scanner middleware. At checkout, an exact barcode followed by Enter adds the product and repeated scans increase its quantity. Completed sales deduct product stock. Product-backed sale quantities must be whole numbers and cannot exceed available stock.
+
+Configure loyalty under **Settings → Loyalty points**. Points are awarded in complete spending groups after discounts and point redemption. Refunds reverse the applicable points, and a complete return reverses any remaining points originally earned by that sale.
+
+New Sale uses a two-column workspace: the editable cart table stays on the left, while customer, receipt, payment, totals, and loyalty controls stay in Checkout on the right. Product search opens an autocomplete overlay with the 15 best name, SKU, barcode, or category matches, so large catalogs do not render as a product grid. Enter a valid number of available points and choose **Redeem** to apply the discount; **Remove** cancels it before checkout.
+
+Open a normal sale in **Sales** and choose **Refund** or **Replace**. Select the returned quantities, provide a reason, and decide whether usable items return to stock. A replacement also selects the outgoing product and calculates the price difference. Every return receives a new unique receipt number linked to the original transaction.
+
+## Rongta RP336UE/RP336UV network example
+
+New installations start without a printer profile because printer models, connection methods, IP addresses, encodings, and paper sizes differ. Open **Printers**, add a receipt printer, choose **Network (raw TCP)**, and enter the address reported by your printer or router. For a Rongta RP336UE/RP336UV, port `9100`, 80 mm paper, 72 mm printable width, and 48 characters per line are common starting values, but verify them against your hardware.
 
 Verify the printer's IP from its self-test/configuration page or router, then test Windows connectivity:
 

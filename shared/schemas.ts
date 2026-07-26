@@ -7,7 +7,15 @@ export const shopSchema = z.object({
   phone: z.string().optional(), email: z.string().optional(), website: z.string().optional(), taxId: z.string().optional(),
   currency: z.string().length(3), locale: z.string().min(2), logoAssetId: z.string().optional(),
   defaultTemplateId: z.string().optional(), defaultPrinterId: z.string().optional(), receiptPrefix: z.string().optional(),
-  nextReceiptNumber: z.number().int().positive(), archived: z.boolean().default(false), createdAt: date, updatedAt: date
+  nextReceiptNumber: z.number().int().positive(), archived: z.boolean().default(false),
+  loyalty: z.object({
+    enabled: z.boolean().default(false),
+    spendAmount: z.number().int().positive().default(50000),
+    pointsAwarded: z.number().int().positive().default(1),
+    redemptionPoints: z.number().int().positive().default(1),
+    redemptionValue: z.number().int().positive().default(100)
+  }).default({ enabled: false, spendAmount: 50000, pointsAwarded: 1, redemptionPoints: 1, redemptionValue: 100 }),
+  createdAt: date, updatedAt: date
 });
 export const productSchema = z.object({
   id, shopIds: z.array(id), name: z.string().min(1), sku: z.string().optional(), barcode: z.string().optional(),
@@ -16,7 +24,7 @@ export const productSchema = z.object({
 });
 export const customerSchema = z.object({
   id, name: z.string().default(""), phone: z.string().trim().min(1, "Phone number is required"), email: z.string().optional(),
-  address: z.string().optional(), notes: z.string().optional(), createdAt: date, updatedAt: date
+  address: z.string().optional(), notes: z.string().optional(), pointsBalance: z.number().int().nonnegative().default(0), createdAt: date, updatedAt: date
 });
 export const saleItemSchema = z.object({
   id, productId: z.string().optional(), name: z.string().min(1), sku: z.string().optional(), quantity: z.number().positive(),
@@ -29,6 +37,12 @@ export const saleSchema = z.object({
   items: z.array(saleItemSchema).min(1), subtotal: z.number().int(), discount: z.number().int(), tax: z.number().int(),
   total: z.number().int(), paymentMethod: z.string().min(1), amountPaid: z.number().int().optional(),
   changeDue: z.number().int().optional(), note: z.string().optional(), status: z.enum(["completed", "voided"]),
+  transactionType: z.enum(["sale","refund","replacement"]).default("sale"), originalSaleId: z.string().optional(),
+  returnedItems: z.array(z.object({ saleItemId: id, productId: z.string().optional(), name: z.string(), quantity: z.number().positive(), amount: z.number().int() })).default([]),
+  returnReason: z.string().optional(), restocked: z.boolean().optional(),
+  pointsEarned: z.number().int().nonnegative().default(0), pointsRedeemed: z.number().int().nonnegative().default(0),
+  pointsReversed: z.number().int().nonnegative().default(0), pointDiscount: z.number().int().nonnegative().default(0),
+  pointsBalanceAfter: z.number().int().nonnegative().optional(),
   printStatus: z.enum(["not_printed", "queued", "printing", "succeeded", "failed"]).default("not_printed"), createdAt: date
 });
 export const printerSchema = z.object({
@@ -45,7 +59,7 @@ export const printerSchema = z.object({
   labelGapMm: z.number().min(0).default(3), printSpeed: z.number().positive().default(4), darkness: z.number().min(0).max(30).default(8),
   createdAt: date, updatedAt: date
 });
-export const blockTypeSchema = z.enum(["logo","shopName","shopContact","customText","metadata","customer","items","totals","payment","divider","spacer","barcode","qrcode","footer","terms","datetime","receiptNumber","labelValue"]);
+export const blockTypeSchema = z.enum(["logo","shopName","shopContact","customText","metadata","customer","items","totals","payment","loyalty","divider","spacer","barcode","qrcode","footer","terms","datetime","receiptNumber","labelValue"]);
 export const blockSchema = z.object({
   id, type: blockTypeSchema, text: z.string().optional(), label: z.string().optional(),
   align: z.enum(["left","center","right"]).default("left"), bold: z.boolean().default(false), underline: z.boolean().default(false),
@@ -62,14 +76,15 @@ export const settingsSchema = z.object({ theme: z.enum(["light","dark","system"]
 export const labelElementSchema=z.object({
   id,type:z.enum(["text","barcode","qrcode","image","line","box"]),x:z.number().min(0),y:z.number().min(0),
   width:z.number().positive(),height:z.number().positive(),text:z.string().default(""),
-  fontSize:z.number().positive().default(12),bold:z.boolean().default(false),rotation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]).default(0),
+  fontSize:z.number().positive().default(12),bold:z.boolean().default(false),align:z.enum(["left","center","right"]).default("left"),
+  rotation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]).default(0),
   barcodeFormat:z.enum(["code128","code39","ean13","upca"]).default("code128"),
   binding:z.enum(["productName","productPrice","productSku","productBarcode","productStock","productQr"]).optional()
 });
 export const labelTemplateSchema=z.object({
   id,name:z.string().min(1),shopId:z.string().optional(),widthMm:z.number().positive(),heightMm:z.number().positive(),
   dpi:z.union([z.literal(203),z.literal(300),z.literal(600)]),orientation:z.enum(["portrait","landscape"]),
-  elements:z.array(labelElementSchema),createdAt:date,updatedAt:date
+  elements:z.array(labelElementSchema),createdAt:date,updatedAt:date,savedAt:date.optional()
 });
 export const collections = ["shops","products","customers","sales","templates","labels","printers","settings"] as const;
 export type Collection = typeof collections[number];

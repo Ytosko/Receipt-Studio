@@ -3,7 +3,6 @@ import { mkdir, readFile, rename, writeFile, copyFile, readdir, rm, cp } from "n
 import path from "node:path";
 import { z } from "zod";
 import { collections, customerSchema, labelTemplateSchema, printerSchema, productSchema, saleSchema, settingsSchema, shopSchema, templateSchema, type Collection } from "../../../shared/schemas.js";
-import { defaultPrinter } from "../../../shared/defaults.js";
 import { createUniqueReceiptNumber } from "../../../shared/receiptNumber.js";
 
 const schemas: Record<Collection, z.ZodType> = {
@@ -21,8 +20,6 @@ export class Repository {
     await mkdir(this.root, { recursive: true }); await mkdir(this.backups, { recursive: true });
     await mkdir(path.join(this.assets, "shop-logos"), { recursive: true });
     for (const name of collections) await this.load(name);
-    const printers = await this.load("printers") as unknown[];
-    if (!printers.length) await this.save("printers", [defaultPrinter()]);
   }
   private file(name: Collection) { return path.join(this.root, `${name}.json`); }
   async load(name: Collection): Promise<unknown> {
