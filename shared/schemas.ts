@@ -12,7 +12,7 @@ export const shopSchema = z.object({
 export const productSchema = z.object({
   id, shopIds: z.array(id), name: z.string().min(1), sku: z.string().optional(), barcode: z.string().optional(),
   category: z.string().optional(), price: z.number().int().nonnegative(), taxRate: z.number().min(0).max(100).optional(),
-  description: z.string().optional(), isActive: z.boolean(), createdAt: date, updatedAt: date
+  stock: z.number().int().nonnegative().default(0), description: z.string().optional(), isActive: z.boolean(), createdAt: date, updatedAt: date
 });
 export const customerSchema = z.object({
   id, name: z.string().default(""), phone: z.string().trim().min(1, "Phone number is required"), email: z.string().optional(),
@@ -63,7 +63,8 @@ export const labelElementSchema=z.object({
   id,type:z.enum(["text","barcode","qrcode","image","line","box"]),x:z.number().min(0),y:z.number().min(0),
   width:z.number().positive(),height:z.number().positive(),text:z.string().default(""),
   fontSize:z.number().positive().default(12),bold:z.boolean().default(false),rotation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]).default(0),
-  barcodeFormat:z.enum(["code128","code39","ean13","upca"]).default("code128")
+  barcodeFormat:z.enum(["code128","code39","ean13","upca"]).default("code128"),
+  binding:z.enum(["productName","productPrice","productSku","productBarcode","productStock","productQr"]).optional()
 });
 export const labelTemplateSchema=z.object({
   id,name:z.string().min(1),shopId:z.string().optional(),widthMm:z.number().positive(),heightMm:z.number().positive(),

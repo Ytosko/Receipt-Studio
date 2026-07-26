@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://reciept-printer.ytosko.dev/"><img alt="Website" src="https://img.shields.io/badge/website-reciept--printer.ytosko.dev-7438e6"></a>
+  <a href="https://receiptprinter.whiteisco.dev/"><img alt="Website" src="https://img.shields.io/badge/website-receiptprinter.whiteisco.dev-7438e6"></a>
   <a href="https://github.com/Ytosko/Receipt-Studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ytosko/Receipt-Studio?color=ff5f83"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Ytosko/Receipt-Studio"></a>
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-17131f">
@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://github.com/Ytosko/Receipt-Studio/releases/latest"><strong>Download Receipt Studio</strong></a>
   ·
-  <a href="https://reciept-printer.ytosko.dev/">Product website</a>
+  <a href="https://receiptprinter.whiteisco.dev/">Product website</a>
   ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
@@ -25,11 +25,11 @@ Completed sales receive collision-checked random receipt identifiers rather than
 
 An XML-formatted project and release reference is available in [`README.xml`](README.xml). The project is released under the MIT License.
 
-Receipt Studio also supports fixed-size label design and printing. Label profiles can use Windows-installed USB printers or raw network ZPL/TSPL printers. Included media presets are 4×6, 4×4, 3×2, 2×1.5, and 2×1 inches plus common metric sizes. Width and height can always be entered manually for custom sheets.
+Receipt Studio also supports fixed-size product-label design and printing. Label profiles can use Windows-installed USB printers or raw network ZPL/TSPL printers. Included media presets are 4×6, 4×4, 3×2, 2×1.5, and 2×1 inches plus common metric sizes. Width and height can always be entered manually for custom sheets. Label printers are intentionally separate from POS receipt printers.
 
 ## Product website
 
-Explore the product, printer options, label designer, and latest Windows download at [reciept-printer.ytosko.dev](https://reciept-printer.ytosko.dev/).
+Explore the product, printer options, label designer, and latest Windows download at [receiptprinter.whiteisco.dev](https://receiptprinter.whiteisco.dev/).
 
 ## Requirements
 
@@ -93,7 +93,9 @@ Install the manufacturer's Windows driver, add or edit a printer profile, and se
 
 Create a printer profile with type **Label printer**, then choose either a Windows/USB system printer or a raw network connection. Network label profiles support ZPL and TSPL/TSPL2. Configure resolution, orientation, label gap, darkness, and media size.
 
-Open **Label Templates** to create a fixed-size design. Text, Code 128, Code 39, EAN-13, UPC-A, QR codes, boxes, and lines can be dragged, resized, rotated, and positioned using exact millimeter values. Select a label printer from the toolbar to print. A custom sheet is created by entering any positive width and height in millimeters.
+Open **Label Templates** to create a fixed-size price-tag design. Product name, price, SKU, stock, barcode, and QR fields are filled automatically from the selected product; custom text, boxes, and dividers are also available. Elements can be dragged, resized, rotated, and positioned using exact millimeter values. Once a template exists, use **Print label** beside any product and choose both the label template and label printer. Printer tests use the same templates with sample product data. A custom sheet is created by entering any positive width and height in millimeters.
+
+POS checkout lists receipt printers only. Label printers cannot be selected for sales or receipt-template tests.
 
 Encoding presets for ESC/POS receipts include common CP437/CP850-family pages, Windows-1252, ISO-8859-1, GB18030, Big5, and Shift-JIS. Actual character availability still depends on printer firmware.
 
