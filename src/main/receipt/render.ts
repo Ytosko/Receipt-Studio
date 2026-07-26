@@ -38,7 +38,7 @@ export function renderReceipt(template: ReceiptTemplate, context: Context): Rend
       case "metadata": out.push({type:"columns",columns:[{text:`Receipt ${context.sale.receiptNumber}`,width:24,align:"left"},{text:new Date(context.sale.createdAt).toLocaleString(context.shop.locale),width:24,align:"right"}]}); break;
       case "datetime": out.push(text(new Date(context.sale.createdAt).toLocaleString(context.shop.locale),b)); break;
       case "receiptNumber": out.push(text(context.sale.receiptNumber,b)); break;
-      case "customer": out.push(text(`Customer: ${context.sale.customerSnapshot?.name||""}${context.sale.customerSnapshot?.phone?`\nPhone: ${context.sale.customerSnapshot.phone}`:""}`,b)); break;
+      case "customer": out.push(text([context.sale.customerSnapshot?.name?`Customer: ${context.sale.customerSnapshot.name}`:"",context.sale.customerSnapshot?.phone?`Phone: ${context.sale.customerSnapshot.phone}`:""].filter(Boolean).join("\n"),b)); break;
       case "items":
         out.push({type:"columns",columns:[{text:"ITEM",width:30,align:"left"},{text:"TOTAL",width:18,align:"right"}]});
         for(const i of context.sale.items) out.push({type:"columns",columns:[{text:`${i.name} × ${i.quantity}`,width:30,align:"left"},{text:m(i.lineTotal),width:18,align:"right"}]});

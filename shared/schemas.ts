@@ -15,7 +15,7 @@ export const productSchema = z.object({
   description: z.string().optional(), isActive: z.boolean(), createdAt: date, updatedAt: date
 });
 export const customerSchema = z.object({
-  id, name: z.string().min(1), phone: z.string().optional(), email: z.string().optional(),
+  id, name: z.string().default(""), phone: z.string().trim().min(1, "Phone number is required"), email: z.string().optional(),
   address: z.string().optional(), notes: z.string().optional(), createdAt: date, updatedAt: date
 });
 export const saleItemSchema = z.object({
