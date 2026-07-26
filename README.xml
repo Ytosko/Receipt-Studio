@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="Receipt Studio" version="1.1.1" license="MIT">
+  <summary>
+    <branding>
+      <name>Receipt Studio</name>
+      <logo format="png">public/logo.png</logo>
+      <logo format="svg">public/logo.svg</logo>
+      <logo format="jpeg">public/logo.jpg</logo>
+      <palette>
+        <color role="primary">#5B18F5</color>
+        <color role="secondary">#A84EE9</color>
+        <color role="accent">#FF6676</color>
+      </palette>
+    </branding>
+    <description>
+      Receipt Studio is a local-first Electron point-of-sale and structured
+      thermal-receipt designer for Windows. It stores shops, products,
+      customers, templates, printers, and sales locally without a database or
+      cloud account.
+    </description>
+    <platforms>
+      <platform priority="primary">Windows 10 x64</platform>
+      <platform priority="primary">Windows 11 x64</platform>
+    </platforms>
+  </summary>
+
+  <features>
+    <feature>Multiple shops with locally stored logo assets</feature>
+    <feature>Products, customers, completed sales, and immutable sale snapshots</feature>
+    <feature>Structured drag-and-drop receipt template designer</feature>
+    <feature>Clickable receipt sections with visible selection outlines</feature>
+    <feature>Integer minor-unit money calculations</feature>
+    <feature>Collision-checked random receipt identifiers</feature>
+    <feature>User-managed payment methods</feature>
+    <feature>Configurable, scannable QR codes across preview, PDF, and ESC/POS</feature>
+    <feature>Installed Windows and USB printer discovery</feature>
+    <feature>ESC/POS encoding presets with real byte conversion</feature>
+    <feature>Fixed-canvas label designer with custom sheet dimensions</feature>
+    <feature>4×6, 4×4, 3×2, 2×1.5, 2×1, and metric label presets</feature>
+    <feature>System, ZPL, and TSPL label printing</feature>
+    <feature>Direct ESC/POS printing over TCP port 9100</feature>
+    <feature>Windows-installed system printer support</feature>
+    <feature>Receipt-width PDF export</feature>
+    <feature>Validated JSON backups and automatic rotating backups</feature>
+  </features>
+
+  <technology>
+    <runtime>Electron</runtime>
+    <renderer>React, TypeScript, Vite, Tailwind CSS</renderer>
+    <state>Zustand</state>
+    <validation>Zod</validation>
+    <dragAndDrop>dnd-kit</dragAndDrop>
+    <testing>Vitest and Playwright</testing>
+    <packaging>electron-builder</packaging>
+  </technology>
+
+  <requirements>
+    <requirement name="Node.js" version="22 or newer"/>
+    <requirement name="npm" version="10 or newer"/>
+    <requirement name="Operating system">Windows 10 or Windows 11 x64</requirement>
+  </requirements>
+
+  <installation>
+    <fromRelease>
+      <step>Download the Setup executable from the GitHub Releases page.</step>
+      <step>Run the installer and launch Receipt Studio.</step>
+      <step>Create a shop during first-launch setup.</step>
+      <step>Configure and test the receipt printer before the first live sale.</step>
+    </fromRelease>
+    <fromSource>
+      <command>git clone YOUR_GITHUB_REPOSITORY_URL</command>
+      <command>cd receipt-studio</command>
+      <command>npm install</command>
+      <command>npm run dev</command>
+    </fromSource>
+  </installation>
+
+  <development>
+    <commands>
+      <command name="Development mode">npm run dev</command>
+      <command name="Lint">npm run lint</command>
+      <command name="Type checking">npm run typecheck</command>
+      <command name="Unit tests">npm run test</command>
+      <command name="Electron end-to-end tests">npm run test:e2e</command>
+      <command name="Production build">npm run build</command>
+      <command name="Windows release artifacts">npm run dist</command>
+    </commands>
+  </development>
+
+  <release>
+    <procedure>
+      <step>Install dependencies with npm install.</step>
+      <step>Run npm run lint.</step>
+      <step>Run npm run typecheck.</step>
+      <step>Run npm run test.</step>
+      <step>Run npm run test:e2e.</step>
+      <step>Run npm run dist.</step>
+      <step>Find the installer and portable executable in the release directory.</step>
+      <step>Create a GitHub Release and attach both executables.</step>
+    </procedure>
+    <artifacts>
+      <artifact>release/Receipt Studio-Setup-1.1.1-x64.exe</artifact>
+      <artifact>release/Receipt Studio-Portable-1.1.1-x64.exe</artifact>
+    </artifacts>
+    <signing>
+      Release executables should be Authenticode-signed before public
+      distribution to reduce Windows SmartScreen warnings.
+    </signing>
+  </release>
+
+  <storage>
+    <database required="false"/>
+    <location>%APPDATA%/Receipt Studio</location>
+    <collections>data/*.json</collections>
+    <logos>assets/shop-logos</logos>
+    <backups>backups</backups>
+    <logs>logs</logs>
+    <notes>
+      Writes are validated with Zod and use temporary files followed by atomic
+      rename. Logo files are copied into the application user-data directory.
+    </notes>
+  </storage>
+
+  <printer model="Rongta RP336UE">
+    <network recommended="true">
+      <protocol>Raw TCP ESC/POS</protocol>
+      <defaultPort>9100</defaultPort>
+      <defaultPaperWidth unit="mm">80</defaultPaperWidth>
+      <defaultPrintableWidth unit="mm">72</defaultPrintableWidth>
+      <connectivityTest>Test-NetConnection PRINTER_IP -Port 9100</connectivityTest>
+      <applicationTest>
+        Open Printers, select Print test, choose a saved receipt template, and
+        print it with sample data through the same path used for real sales.
+      </applicationTest>
+      <note>
+        The computer and printer normally need to be on the same local network.
+        A successful socket write does not prove that paper physically printed.
+      </note>
+    </network>
+    <usb>
+      USB printing uses a printer installed through the Windows printing
+      system and requires the appropriate Rongta Windows driver.
+    </usb>
+  </printer>
+
+  <architecture>
+    <component path="src/main">Electron lifecycle, IPC, storage, PDF, diagnostics, and printing</component>
+    <component path="src/preload">Narrow context-isolated renderer API</component>
+    <component path="src/renderer">React interface and application workflows</component>
+    <component path="shared">Schemas, defaults, and integer-money utilities</component>
+    <component path="tests/unit">Vitest unit tests</component>
+    <component path="tests/e2e">Playwright Electron tests</component>
+  </architecture>
+
+  <security>
+    <control>contextIsolation enabled</control>
+    <control>nodeIntegration disabled</control>
+    <control>sandbox enabled</control>
+    <control>validated narrow IPC requests</control>
+    <control>no generic renderer filesystem or socket access</control>
+  </security>
+
+  <contributing>
+    <step>Fork the repository and create a focused feature branch.</step>
+    <step>Add or update tests for behavioral changes.</step>
+    <step>Run every quality command before opening a pull request.</step>
+    <step>Describe user-visible changes and printer-specific considerations.</step>
+  </contributing>
+
+  <license>
+    Receipt Studio is distributed under the MIT License. See LICENSE.
+  </license>
+</project>

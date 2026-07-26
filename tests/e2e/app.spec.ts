@@ -1,0 +1,22 @@
+import { test, expect, _electron as electron } from "@playwright/test";
+test("first launch renders the setup workflow",async()=>{
+ const app=await electron.launch({args:["."],env:{...process.env,RECEIPT_STUDIO_E2E:"1"}});
+ const page=await app.firstWindow();
+ await expect(page.getByText("Let’s set up your counter.")).toBeVisible();
+ await page.getByRole("button",{name:/Create my shop/}).click();
+ await page.getByLabel("Shop name").fill("Test Shop");
+ await page.getByRole("button",{name:/Create shop/}).click();
+ await expect(page.locator("header").getByText("Test Shop")).toBeVisible();
+ await page.getByRole("link",{name:"Printers"}).click();
+ await page.getByRole("button",{name:"Print test"}).click();
+ await expect(page.getByText("Choose a saved receipt template.")).toBeVisible();
+ await expect(page.getByLabel("Receipt template")).toHaveValue(/.+/);
+ await page.getByRole("button",{name:"Cancel"}).click();
+ await page.getByRole("link",{name:"Label Templates"}).click();
+ await page.getByRole("button",{name:"Create label"}).click();
+ await page.getByLabel("Width mm").fill("63.5");
+ await page.getByLabel("Height mm").fill("38.1");
+ await expect(page.getByText("Autosaving…")).toBeVisible();
+ await expect(page.getByText("Saved locally")).toBeVisible();
+ await app.close();
+});
