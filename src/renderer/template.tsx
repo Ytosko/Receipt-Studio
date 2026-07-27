@@ -66,6 +66,7 @@ export function TemplatePage() {
   const s = useStore(),
     shop = s.shops.find((x) => x.id === s.settings.activeShopId) || s.shops[0],
     existing = s.templates.filter((x) => x.shopId === shop?.id),
+    receiptPrinters = s.printers.filter((x) => x.printerType === "receipt"),
     [selectedId, setSelectedId] = useState(existing[0]?.id || ""),
     [draft, setDraft] = useState<ReceiptTemplate | undefined>(existing[0]),
     [selectedBlock, setSelectedBlock] = useState(""),
@@ -179,6 +180,7 @@ export function TemplatePage() {
   const create = async () => {
     const t = starterTemplate(shop.id);
     t.name = `Template ${existing.length + 1}`;
+    t.printerId = receiptPrinters[0]?.id;
     await s.upsert("templates", t);
     setSelectedId(t.id);
   };
@@ -222,6 +224,24 @@ export function TemplatePage() {
           value={draft.name}
           onChange={(e) => mutate((d) => ({ ...d, name: e.target.value }))}
         />
+        <select
+          aria-label="Assigned receipt printer"
+          className="input !w-52"
+          value={draft.printerId || ""}
+          onChange={(event) =>
+            mutate((template) => ({
+              ...template,
+              printerId: event.target.value || undefined,
+            }))
+          }
+        >
+          <option value="">No assigned receipt printer</option>
+          {receiptPrinters.map((printer) => (
+            <option key={printer.id} value={printer.id}>
+              {printer.name}
+            </option>
+          ))}
+        </select>
         <span
           className={`text-xs ${saved ? "text-[#568178]" : "text-[#b07b29]"}`}
         >

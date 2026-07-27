@@ -1,101 +1,1498 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Barcode, Eye, FileDown, Minus, Plus, Printer, RefreshCcw, Repeat2, Search, Trash2 } from "lucide-react";
-import { formatMoney, lineTotals, normalizeMoneyInput, saleTotals } from "../../shared/money";
-import { maxRedeemablePoints, pointsForSpend, redemptionValue } from "../../shared/loyalty";
+import {
+  Barcode,
+  Eye,
+  FileDown,
+  Minus,
+  Plus,
+  Printer,
+  RefreshCcw,
+  Repeat2,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import {
+  formatMoney,
+  lineTotals,
+  normalizeMoneyInput,
+  saleTotals,
+} from "../../shared/money";
+import {
+  maxRedeemablePoints,
+  pointsForSpend,
+  redemptionValue,
+} from "../../shared/loyalty";
 import type { Customer, Product, Sale, SaleItem } from "../../shared/schemas";
 import { DraftNumberInput, Empty, Modal } from "./components";
 import { ReceiptPreview } from "./receiptPreview";
 import { useStore } from "./store";
 import { CustomerForm } from "./forms";
-const now=()=>new Date().toISOString();
+const now = () => new Date().toISOString();
 
-export function SalePage(){
- const s=useStore(),shop=s.shops.find(x=>x.id===s.settings.activeShopId)||s.shops[0],templates=s.templates.filter(x=>x.shopId===shop?.id),receiptPrinters=s.printers.filter(x=>x.printerType==="receipt"),defaultReceiptPrinter=receiptPrinters.find(x=>x.id===shop?.defaultPrinterId)||receiptPrinters[0];
- const [templateId,setTemplateId]=useState(shop?.defaultTemplateId||templates[0]?.id||""),[printerId,setPrinterId]=useState(defaultReceiptPrinter?.id||""),[items,setItems]=useState<SaleItem[]>([]),[search,setSearch]=useState(""),[searchOpen,setSearchOpen]=useState(false),[scanMessage,setScanMessage]=useState("Scanner ready");
- const scanner=useRef({value:"",started:0,last:0});
- const [discount,setDiscount]=useState(0),[pointsInput,setPointsInput]=useState(0),[pointsRedeemed,setPointsRedeemed]=useState(0),[customerId,setCustomerId]=useState(""),[customerQuery,setCustomerQuery]=useState(""),[customerOpen,setCustomerOpen]=useState(false);
- const [payment,setPayment]=useState<Sale["paymentMethod"]>(s.settings.paymentMethods[0]||"Cash"),[paid,setPaid]=useState(""),[note,setNote]=useState(""),[preview,setPreview]=useState(false),[creatingCustomer,setCreatingCustomer]=useState(false),[busy,setBusy]=useState(false);
- const availableProducts=useMemo(()=>s.products.filter(p=>p.isActive&&(!shop||!p.shopIds.length||p.shopIds.includes(shop.id))),[s.products,shop]),normalizedSearch=search.trim().toLowerCase();
- const searchResults=useMemo(()=>normalizedSearch?availableProducts.filter(p=>`${p.name} ${p.sku||""} ${p.barcode||""} ${p.category||""}`.toLowerCase().includes(normalizedSearch)).sort((a,b)=>productSearchRank(a,normalizedSearch)-productSearchRank(b,normalizedSearch)||a.name.localeCompare(b.name)).slice(0,15):[],[availableProducts,normalizedSearch]);
- const totals=useMemo(()=>saleTotals(items,discount),[items,discount]),customer=s.customers.find(x=>x.id===customerId),money=(n:number)=>formatMoney(n,shop?.currency,shop?.locale),template=s.templates.find(x=>x.id===templateId);
- const loyalty=shop?.loyalty,maxPoints=customer&&loyalty?maxRedeemablePoints(customer.pointsBalance,totals.total,loyalty):0,safePoints=Math.min(pointsRedeemed,maxPoints),pointDiscount=loyalty?Math.min(totals.total,redemptionValue(safePoints,loyalty)):0,netTotal=totals.total-pointDiscount,pointsToEarn=loyalty?pointsForSpend(netTotal,loyalty):0;
- const normalizePhone=(value:string)=>value.replace(/\s+/g,"").toLowerCase(),enteredPhone=customerQuery.trim(),customerMatches=s.customers.filter(value=>`${value.phone} ${value.name} ${value.email||""}`.toLowerCase().includes(customerQuery.toLowerCase())).slice(0,6),exactCustomer=s.customers.find(value=>normalizePhone(value.phone)===normalizePhone(enteredPhone));
- const chooseCustomer=(value:Customer)=>{setCustomerId(value.id);setCustomerQuery(value.phone);setCustomerOpen(false);setPointsInput(0);setPointsRedeemed(0)};
- const add=useCallback((p:Product)=>setItems(old=>{
-  const found=old.find(i=>i.productId===p.id),current=found?.quantity||0;
-  if(current>=p.stock){setScanMessage(`${p.name}: only ${p.stock} in stock`);return old}
-  if(found)return old.map(i=>i.id===found.id?makeItem({...i,quantity:i.quantity+1}):i);
-  return [...old,makeItem({id:crypto.randomUUID(),productId:p.id,name:p.name,sku:p.sku,quantity:1,unitPrice:p.price,discount:0,taxRate:p.taxRate||0})];
- }),[]);
- useEffect(()=>{
-  const onKey=(event:KeyboardEvent)=>{
-   const target=event.target as HTMLElement;if(["INPUT","TEXTAREA","SELECT"].includes(target.tagName)||target.isContentEditable)return;
-   const time=Date.now(),state=scanner.current;
-   if(event.key==="Enter"){
-    const fast=state.value.length>=4&&time-state.last<250&&time-state.started<3000,code=state.value;scanner.current={value:"",started:0,last:0};
-    if(!fast)return;
-    const match=s.products.find(product=>product.isActive&&product.barcode?.toLowerCase()===code.toLowerCase());
-    if(match){event.preventDefault();add(match);setScanMessage(`${match.name} added`)}else setScanMessage("Barcode not found");
-    return;
-   }
-   if(event.key.length!==1)return;
-   if(time-state.last>250)scanner.current={value:event.key,started:time,last:time};else scanner.current={...state,value:state.value+event.key,last:time};
+type SaleTab = { id: string; number: number };
+export function SalePage() {
+  const firstTab = useRef<SaleTab>({
+      id: crypto.randomUUID(),
+      number: 1,
+    }),
+    [nextNumber, setNextNumber] = useState(2),
+    [tabs, setTabs] = useState<SaleTab[]>([firstTab.current]),
+    [activeId, setActiveId] = useState(firstTab.current.id),
+    [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const addTab = () => {
+    const tab = { id: crypto.randomUUID(), number: nextNumber };
+    setNextNumber((value) => value + 1);
+    setTabs((value) => [...value, tab]);
+    setActiveId(tab.id);
   };
-  window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey);
- },[s.products,add]);
- const scan=()=>{const code=search.trim(),match=s.products.find(p=>p.isActive&&p.barcode?.toLowerCase()===code.toLowerCase());if(match){add(match);setSearch("");setSearchOpen(false);setScanMessage(`${match.name} added`)}else setScanMessage(code?"Barcode not found":"Scanner ready")};
- const update=(id:string,patch:Partial<SaleItem>)=>setItems(old=>old.map(i=>i.id===id?makeItem({...i,...patch}):i));
- const checkoutPhone=customer?.phone||enteredPhone;
- const sale:Sale={id:crypto.randomUUID(),shopId:shop?.id||"",templateId,printerId:printerId||undefined,receiptNumber:"DRAFT",customerId:customer?.id,customerSnapshot:checkoutPhone?{name:customer?.name||"",phone:checkoutPhone,email:customer?.email,address:customer?.address}:undefined,items,subtotal:totals.subtotal,discount,tax:totals.tax,total:totals.total,paymentMethod:payment,amountPaid:paid?Math.round(Number(paid)*100):undefined,changeDue:paid?Math.max(0,Math.round(Number(paid)*100)-netTotal):undefined,note:note||undefined,status:"completed",transactionType:"sale",returnedItems:[],pointsEarned:pointsToEarn,pointsRedeemed:safePoints,pointsReversed:0,pointDiscount,printStatus:"not_printed",createdAt:now()};
- const complete=async(print:boolean)=>{
-  if(!shop)return alert("Create a shop first.");if(!checkoutPhone)return alert("Enter or select a customer phone number.");if(!templateId)return alert("Create or select a receipt template.");if(!items.length)return alert("Add at least one item.");
-  setBusy(true);
-  try{
-   let saleCustomer=customer||exactCustomer;
-   if(!saleCustomer){const createdAt=now();saleCustomer={id:crypto.randomUUID(),name:"",phone:enteredPhone,pointsBalance:0,createdAt,updatedAt:createdAt};await s.upsert("customers",saleCustomer)}
-   const finalSale:Sale={...sale,customerId:saleCustomer.id,customerSnapshot:{name:saleCustomer.name,phone:saleCustomer.phone,email:saleCustomer.email,address:saleCustomer.address}};
-   const result=await window.receiptStudio.completeSale(finalSale,print);await s.load();setItems([]);setDiscount(0);setPaid("");setCustomerId("");setCustomerQuery("");setPointsInput(0);setPointsRedeemed(0);alert(print?result.print?.ok?"Sale saved and print data sent.":"Sale saved, but printing failed: "+result.print?.message:"Sale completed.");
-  }catch(e:any){alert(e.message)}finally{setBusy(false)}
- };
- return <div className="h-full min-h-[690px] -m-7 grid grid-cols-[minmax(0,1fr)_380px] bg-[#efeee8]">
-  <section className="p-6 border-r border-[#d9d9d1] overflow-auto bg-[#f7f6f1]">
-   <div className="flex items-center justify-between mb-5"><div><p className="text-xs uppercase tracking-widest font-bold text-[#b27e2c]">Point of sale</p><h1 className="text-2xl font-black">New sale</h1></div><div className="flex items-center gap-3"><span className="text-xs bg-white px-3 py-1 rounded-full">{availableProducts.length} products</span><button className="text-sm text-[#9a3d35]" onClick={()=>items.length&&confirm("Clear this cart?")&&setItems([])}>Clear cart</button></div></div>
-   <div className="relative"><Barcode size={18} className="absolute top-1/2 -translate-y-1/2 left-3 text-[#39786e] pointer-events-none"/><input autoFocus data-product-search aria-label="Product search or barcode scan" role="combobox" aria-expanded={searchOpen&&Boolean(normalizedSearch)} autoComplete="off" className="input !pl-10 !pr-10" placeholder="Search name, SKU, barcode or category…" value={search} onFocus={()=>setSearchOpen(true)} onBlur={()=>window.setTimeout(()=>setSearchOpen(false),150)} onChange={e=>{setSearch(e.target.value);setSearchOpen(true)}} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();scan()}if(e.key==="Escape")setSearchOpen(false)}}/><button type="button" title="Process barcode" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#39786e]" onClick={scan}><Search size={16}/></button>{searchOpen&&normalizedSearch&&<div role="listbox" aria-label="Product matches" className="absolute z-40 top-full mt-1 w-full rounded-xl border border-[#d5d8d2] bg-white shadow-2xl overflow-hidden">{searchResults.length?searchResults.map(product=><button type="button" role="option" aria-selected="false" key={product.id} className="w-full grid grid-cols-[minmax(0,1fr)_110px_110px_70px] items-center gap-3 px-4 py-3 text-left border-b last:border-0 hover:bg-[#eef5f2]" onMouseDown={event=>event.preventDefault()} onClick={()=>{add(product);setSearch("");setSearchOpen(false)}}><span><b className="block truncate">{product.name}</b><span className="block text-xs text-[#74807c] truncate">{[product.sku,product.barcode,product.category].filter(Boolean).join(" · ")||"No SKU or barcode"}</span></span><span className="text-sm">{product.stock} in stock</span><b className="text-right">{money(product.price)}</b><span className={`text-center text-xs font-bold ${product.stock>0?"text-[#1c665b]":"text-[#9b4138]"}`}>{product.stock>0?"Add":"Out"}</span></button>):<div className="p-4 text-sm text-center text-[#68736f]">No matching products.</div>}<div className="px-4 py-2 bg-[#f5f5f1] text-[11px] text-[#68736f]">Showing up to 15 best matches · press Enter to add an exact barcode</div></div>}</div>
-   <p className="text-xs text-[#63716d] mt-1">{scanMessage} · scan anywhere on this page</p>
-   <div className="flex justify-between items-center mt-6 mb-3"><h2 className="font-black text-xl">Added products <span className="text-sm text-[#7e8885] font-normal">({items.length})</span></h2><button className="btn border-dashed" onClick={()=>setItems(old=>[...old,makeItem({id:crypto.randomUUID(),name:"Custom item",quantity:1,unitPrice:0,discount:0,taxRate:0})])}><Plus size={15}/>Custom item</button></div>
-   {!items.length?<Empty title="Your cart is empty" detail="Search for a product above or scan its barcode."/>:<div className="surface overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs uppercase bg-[#eef1ed] text-[#68736f]"><tr><th className="p-3">Product</th><th className="p-3 w-32">Quantity</th><th className="p-3 w-28">Price</th><th className="p-3 w-24">Tax %</th><th className="p-3 w-28 text-right">Total</th><th className="w-12"/></tr></thead><tbody className="divide-y">{items.map(item=><tr key={item.id}><td className="p-3"><input aria-label={`Product name for ${item.name}`} className="font-bold bg-transparent outline-none w-full" value={item.name} onChange={event=>update(item.id,{name:event.target.value})}/><p className="text-xs text-[#74807c]">{item.sku||"Custom line"}</p></td><td className="p-3"><div className="flex items-center border rounded-lg bg-white"><button className="p-2" onClick={()=>update(item.id,{quantity:Math.max(1,item.quantity-1)})}><Minus size={14}/></button><DraftNumberInput aria-label={`Quantity for ${item.name}`} className="w-10 text-center outline-none" min={1} step={1} value={item.quantity} onValueChange={value=>update(item.id,{quantity:Math.max(1,Math.floor(value))})}/><button className="p-2" onClick={()=>update(item.id,{quantity:item.quantity+1})}><Plus size={14}/></button></div></td><td className="p-3"><DraftNumberInput aria-label={`Unit price for ${item.name}`} className="input !p-2" min={0} step=".01" value={item.unitPrice/100} formatValue={value=>value.toFixed(2)} onValueChange={value=>update(item.id,{unitPrice:Math.max(0,Math.round(value*100))})}/></td><td className="p-3"><DraftNumberInput aria-label={`Tax rate for ${item.name}`} className="input !p-2" min={0} value={item.taxRate} onValueChange={value=>update(item.id,{taxRate:Math.max(0,value)})}/></td><td className="p-3 text-right font-black">{money(item.lineTotal)}</td><td className="p-3"><button aria-label={`Remove ${item.name}`} onClick={()=>setItems(current=>current.filter(value=>value.id!==item.id))} className="text-[#a14c42]"><Trash2 size={16}/></button></td></tr>)}</tbody></table></div>}
-  </section>
-  <aside className="p-6 bg-white overflow-auto"><h2 className="font-black text-xl mb-5">Checkout</h2><div className="space-y-4">
-    <div><span className="label">Customer phone (required)</span><div className="flex gap-2"><div className="relative flex-1"><Search size={17} className="absolute top-1/2 -translate-y-1/2 left-3 text-[#7d8783] pointer-events-none"/><input aria-label="Customer phone" role="combobox" aria-expanded={customerOpen&&Boolean(customerQuery)} autoComplete="off" className="input !pl-10" placeholder="Enter phone number" value={customerQuery} onFocus={()=>setCustomerOpen(true)} onBlur={()=>window.setTimeout(()=>setCustomerOpen(false),100)} onChange={e=>{const value=e.target.value;setCustomerQuery(value);const exact=s.customers.find(item=>normalizePhone(item.phone)===normalizePhone(value));setCustomerId(exact?.id||"");setCustomerOpen(true);setPointsInput(0);setPointsRedeemed(0)}}/>{customerOpen&&customerQuery&&customerMatches.length>0&&<div role="listbox" className="absolute z-30 mt-1 w-full rounded-xl border border-[#d5d8d2] bg-white shadow-xl overflow-hidden">{customerMatches.map(value=><button type="button" role="option" aria-selected={value.id===customerId} key={value.id} className="w-full px-3 py-2 text-left hover:bg-[#f2ecfb] border-b last:border-0" onMouseDown={event=>event.preventDefault()} onClick={()=>chooseCustomer(value)}><span className="block font-bold">{value.phone}</span>{value.name&&<span className="block text-xs text-[#68716e]">{value.name}</span>}</button>)}</div>}</div>{enteredPhone&&!exactCustomer&&<button type="button" title="Add optional customer details" aria-label="Add customer details" className="btn !px-3" onClick={()=>setCreatingCustomer(true)}><Plus size={17}/></button>}</div>{customer&&<p className="text-xs text-[#1c665b] mt-1">Selected: {customer.name?`${customer.name} · `:""}{customer.phone} · {customer.pointsBalance} points</p>}{enteredPhone&&!exactCustomer&&<p className="text-xs text-[#7a6a46] mt-1">New number — checkout saves a phone-only customer. Use + for optional details.</p>}</div>
-   <label><span className="label">Saved receipt template</span><select className="input" value={templateId} onChange={e=>setTemplateId(e.target.value)}><option value="">Select template</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-   <label><span className="label">Receipt printer</span><select className="input" value={printerId} onChange={e=>setPrinterId(e.target.value)}><option value="">No receipt printer</option>{receiptPrinters.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-   <div className="border-y py-4 space-y-2 text-sm"><div className="flex justify-between"><span>Subtotal</span><b>{money(totals.subtotal)}</b></div><div className="flex justify-between items-center"><span>Discount</span><DraftNumberInput aria-label="Sale discount" className="input !w-24 !p-1.5 text-right" min={0} step=".01" value={discount/100} formatValue={value=>value.toFixed(2)} onValueChange={value=>setDiscount(Math.max(0,Math.round(value*100)))}/></div><div className="flex justify-between"><span>Tax</span><b>{money(totals.tax)}</b></div>{pointDiscount>0&&<div className="flex justify-between text-[#1c665b]"><span>Points discount</span><b>-{money(pointDiscount)}</b></div>}<div className="flex justify-between text-xl pt-2"><b>Total</b><b>{money(netTotal)}</b></div></div>
-   {loyalty?.enabled&&customer&&<div className="rounded-xl bg-[#eef5f2] p-3 text-sm"><div className="flex justify-between"><b>Loyalty points</b><span>{customer.pointsBalance} available</span></div><span className="label mt-2">Points to redeem (max {maxPoints})</span><div className="flex gap-2"><DraftNumberInput aria-label="Points to redeem" className="input" min={0} step={loyalty.redemptionPoints} value={pointsInput} onValueChange={value=>setPointsInput(Math.max(0,Math.floor(value)))}/><button type="button" className="btn btn-primary whitespace-nowrap" disabled={pointsInput<=0||pointsInput>maxPoints||pointsInput%loyalty.redemptionPoints!==0} onClick={()=>setPointsRedeemed(pointsInput)}>Redeem</button></div>{maxPoints===0&&<p className="text-xs text-[#7a6a46] mt-1">This customer does not have redeemable points yet.</p>}{pointsInput>maxPoints&&maxPoints>0&&<p className="text-xs text-[#9b4138] mt-1">Only {maxPoints} points can be redeemed on this sale.</p>}{pointsInput>0&&pointsInput%loyalty.redemptionPoints!==0&&<p className="text-xs text-[#9b4138] mt-1">Redeem points in groups of {loyalty.redemptionPoints}.</p>}{safePoints>0&&<div className="flex items-center justify-between mt-2 rounded-lg bg-white px-3 py-2"><span><b>{safePoints} points applied</b><span className="block text-xs">Discount: {money(pointDiscount)}</span></span><button type="button" className="text-xs font-bold text-[#9b4138]" onClick={()=>{setPointsInput(0);setPointsRedeemed(0)}}>Remove</button></div>}<p className="text-xs mt-2">This sale earns {pointsToEarn} point{pointsToEarn===1?"":"s"}.</p></div>}
-   <div className="grid grid-cols-2 gap-3"><label><span className="label">Payment</span><select className="input" value={payment} onChange={e=>setPayment(e.target.value)}>{s.settings.paymentMethods.map(method=><option key={method} value={method}>{method}</option>)}</select></label><label><span className="label">Amount paid</span><input className="input" type="text" inputMode="decimal" placeholder="0.00" value={paid} onChange={e=>setPaid(normalizeMoneyInput(e.target.value))}/></label></div>
-   {paid&&<div className="flex justify-between bg-[#e5f1ed] p-3 rounded-xl text-sm"><span>Change due</span><b>{money(Math.max(0,Math.round(Number(paid)*100)-netTotal))}</b></div>}<textarea className="input" placeholder="Optional sale note" value={note} onChange={e=>setNote(e.target.value)}/><button className="btn w-full" onClick={()=>setPreview(true)}><Eye size={16}/>Preview receipt</button><button disabled={busy} className="btn btn-primary w-full !py-3" onClick={()=>void complete(true)}><Printer size={17}/>{busy?"Completing…":"Complete Sale & Print"}</button><button disabled={busy} className="btn w-full" onClick={()=>void complete(false)}>Complete without printing</button>
-  </div></aside>
-  {preview&&<Modal wide title="Receipt preview" onClose={()=>setPreview(false)}><div className="bg-[#deddd6] p-8 flex justify-center"><ReceiptPreview template={template} sale={{...sale,total:netTotal}} shop={shop}/></div></Modal>}
-  {creatingCustomer&&<Modal title="Add customer details" onClose={()=>setCreatingCustomer(false)}><CustomerForm initialPhone={enteredPhone} onSave={async value=>{await s.upsert("customers",value);chooseCustomer(value);setCreatingCustomer(false)}}/></Modal>}
- </div>
+  const closeTab = (tab: SaleTab) => {
+    if (tabs.length === 1) return;
+    if (
+      dirty[tab.id] &&
+      !confirm(`Close Sale ${tab.number} and discard its cart?`)
+    )
+      return;
+    const index = tabs.findIndex((value) => value.id === tab.id),
+      remaining = tabs.filter((value) => value.id !== tab.id);
+    setTabs(remaining);
+    setDirty((value) => {
+      const next = { ...value };
+      delete next[tab.id];
+      return next;
+    });
+    if (activeId === tab.id)
+      setActiveId(remaining[Math.min(index, remaining.length - 1)].id);
+  };
+  return (
+    <div className="-m-7 h-[calc(100%+3.5rem)] min-h-[720px] flex flex-col bg-[#efeee8]">
+      <div className="h-14 shrink-0 border-b border-[#d9d9d1] bg-white px-4 flex items-end gap-1">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.id}
+            className={`h-11 min-w-32 px-4 rounded-t-xl border border-b-0 flex items-center justify-between gap-3 text-sm font-bold ${
+              activeId === tab.id
+                ? "bg-[#f7f6f1] border-[#cfd5d1] text-[#183f38]"
+                : "bg-[#ecece7] border-transparent text-[#69736f]"
+            }`}
+            onClick={() => setActiveId(tab.id)}
+          >
+            <span>
+              Sale {tab.number}
+              {dirty[tab.id] ? " •" : ""}
+            </span>
+            {tabs.length > 1 && (
+              <span
+                role="button"
+                aria-label={`Close Sale ${tab.number}`}
+                className="rounded p-0.5 hover:bg-black/10"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeTab(tab);
+                }}
+              >
+                <X size={14} />
+              </span>
+            )}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="btn !p-2 mb-1.5 ml-1"
+          aria-label="Start another sale"
+          title="Start another sale"
+          onClick={addTab}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      <div className="flex-1 min-h-0">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={activeId === tab.id ? "h-full" : "hidden"}
+          >
+            <SaleWorkspace
+              active={activeId === tab.id}
+              onDirtyChange={(value) =>
+                setDirty((current) =>
+                  current[tab.id] === value
+                    ? current
+                    : { ...current, [tab.id]: value },
+                )
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
-function makeItem(input:any):SaleItem{const t=lineTotals(Number(input.quantity),input.unitPrice,input.discount||0,input.taxRate||0);return{...input,...t}}
-function productSearchRank(product:Product,query:string){if(product.barcode?.toLowerCase()===query)return 0;if(product.sku?.toLowerCase()===query)return 1;if(product.name.toLowerCase()===query)return 2;if(product.name.toLowerCase().startsWith(query))return 3;if(product.sku?.toLowerCase().startsWith(query)||product.barcode?.toLowerCase().startsWith(query))return 4;return 5}
-function canReturnSale(sale:Sale,sales:Sale[]){if(sale.transactionType!=="sale")return false;const returned=new Map<string,number>();for(const transaction of sales.filter(value=>value.originalSaleId===sale.id))for(const item of transaction.returnedItems)returned.set(item.saleItemId,(returned.get(item.saleItemId)||0)+item.quantity);return sale.items.some(item=>(returned.get(item.id)||0)<item.quantity)}
-function saleTypeLabel(sale:Sale,sales:Sale[]){if(sale.transactionType!=="sale")return sale.transactionType;const linked=sales.filter(value=>value.originalSaleId===sale.id),count=linked.flatMap(value=>value.returnedItems).reduce((sum,item)=>sum+item.quantity,0),total=sale.items.reduce((sum,item)=>sum+item.quantity,0);return count<=0?"sale":count>=total?"refunded":"partially refunded"}
 
-export function SalesPage(){
- const s=useStore(),[query,setQuery]=useState(""),[view,setView]=useState<Sale|undefined>(),[action,setAction]=useState<{sale:Sale;mode:"refund"|"replacement"}|undefined>(),shop=s.shops.find(x=>x.id===s.settings.activeShopId)||s.shops[0];
- const list=[...s.sales].reverse().filter(x=>`${x.receiptNumber} ${x.customerSnapshot?.phone||""} ${x.customerSnapshot?.name||""} ${x.transactionType}`.toLowerCase().includes(query.toLowerCase()));
- return <div className="max-w-[1280px] mx-auto"><p className="text-sm font-bold text-[#c84c5d] uppercase tracking-widest">Records</p><h1 className="text-3xl font-black mb-6">Sales history</h1><div className="surface"><div className="p-4 border-b"><div className="relative max-w-sm"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8582] pointer-events-none"/><input className="input !pl-10" placeholder="Search receipt, customer or type…" value={query} onChange={e=>setQuery(e.target.value)}/></div></div>{!list.length?<div className="p-6"><Empty title="No completed sales" detail="Your first completed sale will be recorded here."/></div>:<table className="w-full text-sm"><thead className="text-left text-xs uppercase bg-[#f7f7f3] text-[#78827f]"><tr><th className="p-4">Receipt</th><th className="p-4">Type</th><th className="p-4">Date</th><th className="p-4">Payment</th><th className="p-4">Total</th><th/></tr></thead><tbody className="divide-y">{list.map(x=><tr key={x.id}><td className="p-4 font-bold">{x.receiptNumber}</td><td className="p-4"><span className={`rounded-full px-2 py-1 text-xs ${x.transactionType==="refund"?"bg-[#f9e4e1] text-[#9b4138]":x.transactionType==="replacement"?"bg-[#fff1ce] text-[#765817]":"bg-[#e0f0e9] text-[#17604f]"}`}>{saleTypeLabel(x,s.sales)}</span></td><td className="p-4">{new Date(x.createdAt).toLocaleString()}</td><td className="p-4">{x.paymentMethod}</td><td className="p-4 font-bold">{formatMoney(x.total,shop?.currency,shop?.locale)}</td><td className="p-4"><button className="btn !py-1.5" onClick={()=>setView(x)}>View</button></td></tr>)}</tbody></table>}</div>
- {view&&<Modal wide title={`Receipt ${view.receiptNumber}`} onClose={()=>setView(undefined)}><div className="grid grid-cols-[1fr_320px] gap-6"><div><h3 className="font-bold mb-3 capitalize">{saleTypeLabel(view,s.sales)} details</h3>{view.originalSaleId&&<p className="text-xs mb-3">Linked to {s.sales.find(x=>x.id===view.originalSaleId)?.receiptNumber}</p>}{view.items.map(i=><div className="flex justify-between py-2 border-b" key={i.id}><span>{i.name} × {i.quantity}</span><b>{formatMoney(i.lineTotal,shop?.currency,shop?.locale)}</b></div>)}{view.pointsEarned>0&&<p className="text-sm mt-3">Points earned: {view.pointsEarned}</p>}{view.pointsRedeemed>0&&<p className="text-sm">Points redeemed: {view.pointsRedeemed}</p>}{view.pointsReversed>0&&<p className="text-sm">Points reversed: {view.pointsReversed}</p>}<div className="flex flex-wrap gap-2 mt-5"><button className="btn" onClick={async()=>{try{await window.receiptStudio.printSale(view.id);await s.load();alert("Print data sent.")}catch(e:any){alert(e.message)}}}><Printer size={16}/>Reprint</button><button className="btn" onClick={()=>void window.receiptStudio.exportPdf(view.id)}><FileDown size={16}/>Export PDF</button>{canReturnSale(view,s.sales)&&<><button className="btn" onClick={()=>{setView(undefined);setAction({sale:view,mode:"refund"})}}><RefreshCcw size={16}/>Refund</button><button className="btn" onClick={()=>{setView(undefined);setAction({sale:view,mode:"replacement"})}}><Repeat2 size={16}/>Replace</button></>}</div></div><ReceiptPreview template={s.templates.find(t=>t.id===view.templateId)} sale={view} shop={shop}/></div></Modal>}
- {action&&<ReturnModal {...action} products={s.products.filter(p=>p.isActive)} paymentMethods={s.settings.paymentMethods} sales={s.sales} money={value=>formatMoney(value,shop?.currency,shop?.locale)} onClose={()=>setAction(undefined)} onDone={async()=>{await s.load();setAction(undefined)}}/>}
- </div>
+function SaleWorkspace({
+  active,
+  onDirtyChange,
+}: {
+  active: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const s = useStore(),
+    shop = s.shops.find((x) => x.id === s.settings.activeShopId) || s.shops[0],
+    templates = s.templates.filter((x) => x.shopId === shop?.id),
+    receiptPrinters = s.printers.filter((x) => x.printerType === "receipt"),
+    initialTemplateId = shop?.defaultTemplateId || templates[0]?.id || "",
+    initialTemplate = templates.find((x) => x.id === initialTemplateId),
+    defaultReceiptPrinter =
+      receiptPrinters.find((x) => x.id === initialTemplate?.printerId) ||
+      receiptPrinters.find((x) => x.id === shop?.defaultPrinterId) ||
+      receiptPrinters[0];
+  const [templateId, setTemplateId] = useState(
+      initialTemplateId,
+    ),
+    [printerId, setPrinterId] = useState(defaultReceiptPrinter?.id || ""),
+    [items, setItems] = useState<SaleItem[]>([]),
+    [search, setSearch] = useState(""),
+    [searchOpen, setSearchOpen] = useState(false),
+    [scanMessage, setScanMessage] = useState("Scanner ready");
+  const scanner = useRef<{
+    value: string;
+    started: number;
+    last: number;
+    target?: HTMLInputElement | HTMLTextAreaElement;
+    originalValue?: string;
+  }>({ value: "", started: 0, last: 0 }),
+    searchCloseTimer = useRef<number | undefined>(undefined),
+    customerCloseTimer = useRef<number | undefined>(undefined);
+  const [discount, setDiscount] = useState(0),
+    [pointsInput, setPointsInput] = useState(0),
+    [pointsRedeemed, setPointsRedeemed] = useState(0),
+    [customerId, setCustomerId] = useState(""),
+    [customerQuery, setCustomerQuery] = useState(""),
+    [customerOpen, setCustomerOpen] = useState(false);
+  const [payment, setPayment] = useState<Sale["paymentMethod"]>(
+      s.settings.paymentMethods[0] || "Cash",
+    ),
+    [paid, setPaid] = useState(""),
+    [note, setNote] = useState(""),
+    [preview, setPreview] = useState(false),
+    [creatingCustomer, setCreatingCustomer] = useState(false),
+    [busy, setBusy] = useState(false);
+  const availableProducts = useMemo(
+      () =>
+        s.products.filter(
+          (p) =>
+            p.isActive &&
+            (!shop || !p.shopIds.length || p.shopIds.includes(shop.id)),
+        ),
+      [s.products, shop],
+    ),
+    normalizedSearch = search.trim().toLowerCase();
+  const searchResults = useMemo(
+    () =>
+      normalizedSearch
+        ? availableProducts
+            .filter((p) =>
+              `${p.name} ${p.sku || ""} ${p.barcode || ""} ${p.category || ""}`
+                .toLowerCase()
+                .includes(normalizedSearch),
+            )
+            .sort(
+              (a, b) =>
+                productSearchRank(a, normalizedSearch) -
+                  productSearchRank(b, normalizedSearch) ||
+                a.name.localeCompare(b.name),
+            )
+            .slice(0, 15)
+        : [],
+    [availableProducts, normalizedSearch],
+  );
+  const totals = useMemo(() => saleTotals(items, discount), [items, discount]),
+    customer = s.customers.find((x) => x.id === customerId),
+    money = (n: number) => formatMoney(n, shop?.currency, shop?.locale),
+    template = s.templates.find((x) => x.id === templateId);
+  const loyalty = shop?.loyalty,
+    maxPoints =
+      customer && loyalty
+        ? maxRedeemablePoints(customer.pointsBalance, totals.total, loyalty)
+        : 0,
+    safePoints = Math.min(pointsRedeemed, maxPoints),
+    pointDiscount = loyalty
+      ? Math.min(totals.total, redemptionValue(safePoints, loyalty))
+      : 0,
+    netTotal = totals.total - pointDiscount,
+    pointsToEarn = loyalty ? pointsForSpend(netTotal, loyalty) : 0;
+  const normalizePhone = (value: string) =>
+      value.replace(/\s+/g, "").toLowerCase(),
+    enteredPhone = customerQuery.trim(),
+    customerMatches = s.customers
+      .filter((value) =>
+        `${value.phone} ${value.name} ${value.email || ""}`
+          .toLowerCase()
+          .includes(customerQuery.toLowerCase()),
+      )
+      .slice(0, 6),
+    exactCustomer = s.customers.find(
+      (value) => normalizePhone(value.phone) === normalizePhone(enteredPhone),
+    );
+  const chooseCustomer = (value: Customer) => {
+    setCustomerId(value.id);
+    setCustomerQuery(value.phone);
+    setCustomerOpen(false);
+    setPointsInput(0);
+    setPointsRedeemed(0);
+  };
+  const add = useCallback(
+    (p: Product) =>
+      setItems((old) => {
+        const found = old.find((i) => i.productId === p.id),
+          current = found?.quantity || 0;
+        if (current >= p.stock) {
+          setScanMessage(`${p.name}: only ${p.stock} in stock`);
+          return old;
+        }
+        if (found)
+          return old.map((i) =>
+            i.id === found.id
+              ? makeItem({ ...i, quantity: i.quantity + 1 })
+              : i,
+          );
+        return [
+          ...old,
+          makeItem({
+            id: crypto.randomUUID(),
+            productId: p.id,
+            name: p.name,
+            sku: p.sku,
+            quantity: 1,
+            unitPrice: p.price,
+            discount: 0,
+            taxRate: p.taxRate || 0,
+          }),
+        ];
+      }),
+    [],
+  );
+  useEffect(() => {
+    onDirtyChange(items.length > 0);
+  }, [items.length, onDirtyChange]);
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => {
+      const time = Date.now(),
+        state = scanner.current;
+      if (event.key === "Enter" || event.key === "Tab") {
+        const fast =
+            state.value.length >= 4 &&
+        time - state.last < 250 &&
+            state.started > 0 &&
+        time - state.started < 3000,
+          code = state.value;
+        scanner.current = { value: "", started: 0, last: 0 };
+        if (!fast) return;
+        const match = availableProducts.find(
+          (product) => product.barcode?.toLowerCase() === code.toLowerCase(),
+        );
+        if (match) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (state.target?.dataset.productSearch === "true") setSearch("");
+          else if (state.target && state.originalValue !== undefined)
+            restoreFormControl(state.target, state.originalValue);
+          add(match);
+          setSearchOpen(false);
+          setScanMessage(`${match.name} added`);
+        } else if (state.target?.dataset.productSearch === "true")
+          setScanMessage("Barcode not found");
+        return;
+      }
+      if (
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.key.length !== 1
+      )
+        return;
+      const target =
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+          ? event.target
+          : undefined;
+    if (!state.started || time - state.last >= 250)
+        scanner.current = {
+          value: event.key,
+          started: time,
+          last: time,
+          target,
+          originalValue: target?.value,
+        };
+      else
+        scanner.current = {
+          ...state,
+          value: state.value + event.key,
+          last: time,
+        };
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [active, availableProducts, add]);
+  const scan = () => {
+    const code = search.trim(),
+      match = s.products.find(
+        (p) => p.isActive && p.barcode?.toLowerCase() === code.toLowerCase(),
+      );
+    if (match) {
+      add(match);
+      setSearch("");
+      setSearchOpen(false);
+      setScanMessage(`${match.name} added`);
+    } else setScanMessage(code ? "Barcode not found" : "Scanner ready");
+  };
+  const update = (id: string, patch: Partial<SaleItem>) =>
+    setItems((old) =>
+      old.map((i) => (i.id === id ? makeItem({ ...i, ...patch }) : i)),
+    );
+  const checkoutPhone = customer?.phone || enteredPhone;
+  const sale: Sale = {
+    id: crypto.randomUUID(),
+    shopId: shop?.id || "",
+    templateId,
+    printerId: printerId || undefined,
+    receiptNumber: "DRAFT",
+    customerId: customer?.id,
+    customerSnapshot: checkoutPhone
+      ? {
+          name: customer?.name || "",
+          phone: checkoutPhone,
+          email: customer?.email,
+          address: customer?.address,
+        }
+      : undefined,
+    items,
+    subtotal: totals.subtotal,
+    discount,
+    tax: totals.tax,
+    total: totals.total,
+    paymentMethod: payment,
+    amountPaid: paid ? Math.round(Number(paid) * 100) : undefined,
+    changeDue: paid
+      ? Math.max(0, Math.round(Number(paid) * 100) - netTotal)
+      : undefined,
+    note: note || undefined,
+    status: "completed",
+    transactionType: "sale",
+    returnedItems: [],
+    pointsEarned: pointsToEarn,
+    pointsRedeemed: safePoints,
+    pointsReversed: 0,
+    pointDiscount,
+    printStatus: "not_printed",
+    createdAt: now(),
+  };
+  const complete = async (print: boolean) => {
+    if (!shop) return alert("Create a shop first.");
+    if (!checkoutPhone)
+      return alert("Enter or select a customer phone number.");
+    if (!templateId) return alert("Create or select a receipt template.");
+    if (!items.length) return alert("Add at least one item.");
+    setBusy(true);
+    try {
+      let saleCustomer = customer || exactCustomer;
+      if (!saleCustomer) {
+        const createdAt = now();
+        saleCustomer = {
+          id: crypto.randomUUID(),
+          name: "",
+          phone: enteredPhone,
+          pointsBalance: 0,
+          createdAt,
+          updatedAt: createdAt,
+        };
+        await s.upsert("customers", saleCustomer);
+      }
+      const finalSale: Sale = {
+        ...sale,
+        customerId: saleCustomer.id,
+        customerSnapshot: {
+          name: saleCustomer.name,
+          phone: saleCustomer.phone,
+          email: saleCustomer.email,
+          address: saleCustomer.address,
+        },
+      };
+      const result = await window.receiptStudio.completeSale(finalSale, print);
+      await s.load();
+      setItems([]);
+      setDiscount(0);
+      setPaid("");
+      setCustomerId("");
+      setCustomerQuery("");
+      setPointsInput(0);
+      setPointsRedeemed(0);
+      alert(
+        print
+          ? result.print?.ok
+            ? "Sale saved and print data sent."
+            : "Sale saved, but printing failed: " + result.print?.message
+          : "Sale completed.",
+      );
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="h-full min-h-[690px] grid grid-cols-[minmax(0,1fr)_380px] bg-[#efeee8]">
+      <section className="p-6 border-r border-[#d9d9d1] overflow-auto bg-[#f7f6f1]">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-xs uppercase tracking-widest font-bold text-[#b27e2c]">
+              Point of sale
+            </p>
+            <h1 className="text-2xl font-black">New sale</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs bg-white px-3 py-1 rounded-full">
+              {availableProducts.length} products
+            </span>
+            <button
+              className="text-sm text-[#9a3d35]"
+              onClick={() =>
+                items.length && confirm("Clear this cart?") && setItems([])
+              }
+            >
+              Clear cart
+            </button>
+          </div>
+        </div>
+        <div className="relative">
+          <Barcode
+            size={18}
+            className="absolute top-1/2 -translate-y-1/2 left-3 text-[#39786e] pointer-events-none"
+          />
+          <input
+            autoFocus
+            data-product-search
+            aria-label="Product search or barcode scan"
+            role="combobox"
+            aria-expanded={searchOpen && Boolean(normalizedSearch)}
+            autoComplete="off"
+            className="input !pl-10 !pr-10"
+            placeholder="Search name, SKU, barcode or category…"
+            value={search}
+            onFocus={() => {
+              window.clearTimeout(searchCloseTimer.current);
+              setSearchOpen(true);
+            }}
+            onBlur={() => {
+              searchCloseTimer.current = window.setTimeout(
+                () => setSearchOpen(false),
+                150,
+              );
+            }}
+            onChange={(e) => {
+              window.clearTimeout(searchCloseTimer.current);
+              setSearch(e.target.value);
+              setSearchOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                scan();
+              }
+              if (e.key === "Escape") setSearchOpen(false);
+            }}
+          />
+          <button
+            type="button"
+            title="Process barcode"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#39786e]"
+            onClick={scan}
+          >
+            <Search size={16} />
+          </button>
+          {searchOpen && normalizedSearch && (
+            <div
+              role="listbox"
+              aria-label="Product matches"
+              className="absolute z-40 top-full mt-1 w-full rounded-xl border border-[#d5d8d2] bg-white shadow-2xl overflow-hidden"
+            >
+              {searchResults.length ? (
+                searchResults.map((product) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    key={product.id}
+                    className="w-full grid grid-cols-[minmax(0,1fr)_110px_110px_70px] items-center gap-3 px-4 py-3 text-left border-b last:border-0 hover:bg-[#eef5f2]"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      add(product);
+                      setSearch("");
+                      setSearchOpen(false);
+                    }}
+                  >
+                    <span>
+                      <b className="block truncate">{product.name}</b>
+                      <span className="block text-xs text-[#74807c] truncate">
+                        {[product.sku, product.barcode, product.category]
+                          .filter(Boolean)
+                          .join(" · ") || "No SKU or barcode"}
+                      </span>
+                    </span>
+                    <span className="text-sm">{product.stock} in stock</span>
+                    <b className="text-right">{money(product.price)}</b>
+                    <span
+                      className={`text-center text-xs font-bold ${product.stock > 0 ? "text-[#1c665b]" : "text-[#9b4138]"}`}
+                    >
+                      {product.stock > 0 ? "Add" : "Out"}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="p-4 text-sm text-center text-[#68736f]">
+                  No matching products.
+                </div>
+              )}
+              <div className="px-4 py-2 bg-[#f5f5f1] text-[11px] text-[#68736f]">
+                Showing up to 15 best matches · press Enter to add an exact
+                barcode
+              </div>
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-[#63716d] mt-1">
+          {scanMessage} · scan anywhere on this page
+        </p>
+        <div className="flex justify-between items-center mt-6 mb-3">
+          <h2 className="font-black text-xl">
+            Added products{" "}
+            <span className="text-sm text-[#7e8885] font-normal">
+              ({items.length})
+            </span>
+          </h2>
+          <button
+            className="btn border-dashed"
+            onClick={() =>
+              setItems((old) => [
+                ...old,
+                makeItem({
+                  id: crypto.randomUUID(),
+                  name: "Custom item",
+                  quantity: 1,
+                  unitPrice: 0,
+                  discount: 0,
+                  taxRate: 0,
+                }),
+              ])
+            }
+          >
+            <Plus size={15} />
+            Custom item
+          </button>
+        </div>
+        {!items.length ? (
+          <Empty
+            title="Your cart is empty"
+            detail="Search for a product above or scan its barcode."
+          />
+        ) : (
+          <div className="surface overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase bg-[#eef1ed] text-[#68736f]">
+                <tr>
+                  <th className="p-3">Product</th>
+                  <th className="p-3 w-32">Quantity</th>
+                  <th className="p-3 w-28">Price</th>
+                  <th className="p-3 w-24">Tax %</th>
+                  <th className="p-3 w-28 text-right">Total</th>
+                  <th className="w-12" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="p-3">
+                      <input
+                        aria-label={`Product name for ${item.name}`}
+                        className="font-bold bg-transparent outline-none w-full"
+                        value={item.name}
+                        onChange={(event) =>
+                          update(item.id, { name: event.target.value })
+                        }
+                      />
+                      <p className="text-xs text-[#74807c]">
+                        {item.sku || "Custom line"}
+                      </p>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center border rounded-lg bg-white">
+                        <button
+                          className="p-2"
+                          onClick={() =>
+                            update(item.id, {
+                              quantity: Math.max(1, item.quantity - 1),
+                            })
+                          }
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <DraftNumberInput
+                          aria-label={`Quantity for ${item.name}`}
+                          className="w-10 text-center outline-none"
+                          min={1}
+                          step={1}
+                          value={item.quantity}
+                          onValueChange={(value) =>
+                            update(item.id, {
+                              quantity: Math.max(1, Math.floor(value)),
+                            })
+                          }
+                        />
+                        <button
+                          className="p-2"
+                          onClick={() =>
+                            update(item.id, { quantity: item.quantity + 1 })
+                          }
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <DraftNumberInput
+                        aria-label={`Unit price for ${item.name}`}
+                        className="input !p-2"
+                        min={0}
+                        step=".01"
+                        value={item.unitPrice / 100}
+                        formatValue={(value) => value.toFixed(2)}
+                        onValueChange={(value) =>
+                          update(item.id, {
+                            unitPrice: Math.max(0, Math.round(value * 100)),
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="p-3">
+                      <DraftNumberInput
+                        aria-label={`Tax rate for ${item.name}`}
+                        className="input !p-2"
+                        min={0}
+                        value={item.taxRate}
+                        onValueChange={(value) =>
+                          update(item.id, { taxRate: Math.max(0, value) })
+                        }
+                      />
+                    </td>
+                    <td className="p-3 text-right font-black">
+                      {money(item.lineTotal)}
+                    </td>
+                    <td className="p-3">
+                      <button
+                        aria-label={`Remove ${item.name}`}
+                        onClick={() =>
+                          setItems((current) =>
+                            current.filter((value) => value.id !== item.id),
+                          )
+                        }
+                        className="text-[#a14c42]"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <aside className="p-6 bg-white overflow-auto">
+        <h2 className="font-black text-xl mb-5">Checkout</h2>
+        <div className="space-y-4">
+          <div>
+            <span className="label">Customer phone (required)</span>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search
+                  size={17}
+                  className="absolute top-1/2 -translate-y-1/2 left-3 text-[#7d8783] pointer-events-none"
+                />
+                <input
+                  aria-label="Customer phone"
+                  role="combobox"
+                  aria-expanded={customerOpen && Boolean(customerQuery)}
+                  autoComplete="off"
+                  className="input !pl-10"
+                  placeholder="Enter phone number"
+                  value={customerQuery}
+                  onFocus={() => {
+                    window.clearTimeout(customerCloseTimer.current);
+                    setCustomerOpen(true);
+                  }}
+                  onBlur={() => {
+                    customerCloseTimer.current = window.setTimeout(
+                      () => setCustomerOpen(false),
+                      100,
+                    );
+                  }}
+                  onChange={(e) => {
+                    window.clearTimeout(customerCloseTimer.current);
+                    const value = e.target.value;
+                    setCustomerQuery(value);
+                    const exact = s.customers.find(
+                      (item) =>
+                        normalizePhone(item.phone) === normalizePhone(value),
+                    );
+                    setCustomerId(exact?.id || "");
+                    setCustomerOpen(true);
+                    setPointsInput(0);
+                    setPointsRedeemed(0);
+                  }}
+                />
+                {customerOpen &&
+                  customerQuery &&
+                  customerMatches.length > 0 && (
+                    <div
+                      role="listbox"
+                      className="absolute z-30 mt-1 w-full rounded-xl border border-[#d5d8d2] bg-white shadow-xl overflow-hidden"
+                    >
+                      {customerMatches.map((value) => (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={value.id === customerId}
+                          key={value.id}
+                          className="w-full px-3 py-2 text-left hover:bg-[#f2ecfb] border-b last:border-0"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => chooseCustomer(value)}
+                        >
+                          <span className="block font-bold">{value.phone}</span>
+                          {value.name && (
+                            <span className="block text-xs text-[#68716e]">
+                              {value.name}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </div>
+              {enteredPhone && !exactCustomer && (
+                <button
+                  type="button"
+                  title="Add optional customer details"
+                  aria-label="Add customer details"
+                  className="btn !px-3"
+                  onClick={() => setCreatingCustomer(true)}
+                >
+                  <Plus size={17} />
+                </button>
+              )}
+            </div>
+            {customer && (
+              <p className="text-xs text-[#1c665b] mt-1">
+                Selected: {customer.name ? `${customer.name} · ` : ""}
+                {customer.phone} · {customer.pointsBalance} points
+              </p>
+            )}
+            {enteredPhone && !exactCustomer && (
+              <p className="text-xs text-[#7a6a46] mt-1">
+                New number — checkout saves a phone-only customer. Use + for
+                optional details.
+              </p>
+            )}
+          </div>
+          <label>
+            <span className="label">Saved receipt template</span>
+            <select
+              className="input"
+              value={templateId}
+              onChange={(event) => {
+                const value = event.target.value;
+                setTemplateId(value);
+                const assignedPrinterId = templates.find(
+                  (candidate) => candidate.id === value,
+                )?.printerId;
+                if (
+                  assignedPrinterId &&
+                  receiptPrinters.some(
+                    (printer) => printer.id === assignedPrinterId,
+                  )
+                )
+                  setPrinterId(assignedPrinterId);
+              }}
+            >
+              <option value="">Select template</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">Receipt printer</span>
+            <select
+              className="input"
+              value={printerId}
+              onChange={(e) => setPrinterId(e.target.value)}
+            >
+              <option value="">No receipt printer</option>
+              {receiptPrinters.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="border-y py-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <b>{money(totals.subtotal)}</b>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>Discount</span>
+              <DraftNumberInput
+                aria-label="Sale discount"
+                className="input !w-24 !p-1.5 text-right"
+                min={0}
+                step=".01"
+                value={discount / 100}
+                formatValue={(value) => value.toFixed(2)}
+                onValueChange={(value) =>
+                  setDiscount(Math.max(0, Math.round(value * 100)))
+                }
+              />
+            </div>
+            <div className="flex justify-between">
+              <span>Tax</span>
+              <b>{money(totals.tax)}</b>
+            </div>
+            {pointDiscount > 0 && (
+              <div className="flex justify-between text-[#1c665b]">
+                <span>Points discount</span>
+                <b>-{money(pointDiscount)}</b>
+              </div>
+            )}
+            <div className="flex justify-between text-xl pt-2">
+              <b>Total</b>
+              <b>{money(netTotal)}</b>
+            </div>
+          </div>
+          {loyalty?.enabled && customer && (
+            <div className="rounded-xl bg-[#eef5f2] p-3 text-sm">
+              <div className="flex justify-between">
+                <b>Loyalty points</b>
+                <span>{customer.pointsBalance} available</span>
+              </div>
+              <span className="label mt-2">
+                Points to redeem (max {maxPoints})
+              </span>
+              <div className="flex gap-2">
+                <DraftNumberInput
+                  aria-label="Points to redeem"
+                  className="input"
+                  min={0}
+                  step={loyalty.redemptionPoints}
+                  value={pointsInput}
+                  onValueChange={(value) =>
+                    setPointsInput(Math.max(0, Math.floor(value)))
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary whitespace-nowrap"
+                  disabled={
+                    pointsInput <= 0 ||
+                    pointsInput > maxPoints ||
+                    pointsInput % loyalty.redemptionPoints !== 0
+                  }
+                  onClick={() => setPointsRedeemed(pointsInput)}
+                >
+                  Redeem
+                </button>
+              </div>
+              {maxPoints === 0 && (
+                <p className="text-xs text-[#7a6a46] mt-1">
+                  This customer does not have redeemable points yet.
+                </p>
+              )}
+              {pointsInput > maxPoints && maxPoints > 0 && (
+                <p className="text-xs text-[#9b4138] mt-1">
+                  Only {maxPoints} points can be redeemed on this sale.
+                </p>
+              )}
+              {pointsInput > 0 &&
+                pointsInput % loyalty.redemptionPoints !== 0 && (
+                  <p className="text-xs text-[#9b4138] mt-1">
+                    Redeem points in groups of {loyalty.redemptionPoints}.
+                  </p>
+                )}
+              {safePoints > 0 && (
+                <div className="flex items-center justify-between mt-2 rounded-lg bg-white px-3 py-2">
+                  <span>
+                    <b>{safePoints} points applied</b>
+                    <span className="block text-xs">
+                      Discount: {money(pointDiscount)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-[#9b4138]"
+                    onClick={() => {
+                      setPointsInput(0);
+                      setPointsRedeemed(0);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+              <p className="text-xs mt-2">
+                This sale earns {pointsToEarn} point
+                {pointsToEarn === 1 ? "" : "s"}.
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <label>
+              <span className="label">Payment</span>
+              <select
+                className="input"
+                value={payment}
+                onChange={(e) => setPayment(e.target.value)}
+              >
+                {s.settings.paymentMethods.map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="label">Amount paid</span>
+              <input
+                className="input"
+                type="text"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={paid}
+                onChange={(e) => setPaid(normalizeMoneyInput(e.target.value))}
+              />
+            </label>
+          </div>
+          {paid && (
+            <div className="flex justify-between bg-[#e5f1ed] p-3 rounded-xl text-sm">
+              <span>Change due</span>
+              <b>
+                {money(Math.max(0, Math.round(Number(paid) * 100) - netTotal))}
+              </b>
+            </div>
+          )}
+          <textarea
+            className="input"
+            placeholder="Optional sale note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <button className="btn w-full" onClick={() => setPreview(true)}>
+            <Eye size={16} />
+            Preview receipt
+          </button>
+          <button
+            disabled={busy}
+            className="btn btn-primary w-full !py-3"
+            onClick={() => void complete(true)}
+          >
+            <Printer size={17} />
+            {busy ? "Completing…" : "Complete Sale & Print"}
+          </button>
+          <button
+            disabled={busy}
+            className="btn w-full"
+            onClick={() => void complete(false)}
+          >
+            Complete without printing
+          </button>
+        </div>
+      </aside>
+      {preview && (
+        <Modal wide title="Receipt preview" onClose={() => setPreview(false)}>
+          <div className="bg-[#deddd6] p-8 flex justify-center">
+            <ReceiptPreview
+              template={template}
+              sale={{ ...sale, total: netTotal }}
+              shop={shop}
+            />
+          </div>
+        </Modal>
+      )}
+      {creatingCustomer && (
+        <Modal
+          title="Add customer details"
+          onClose={() => setCreatingCustomer(false)}
+        >
+          <CustomerForm
+            initialPhone={enteredPhone}
+            onSave={async (value) => {
+              await s.upsert("customers", value);
+              chooseCustomer(value);
+              setCreatingCustomer(false);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+function makeItem(input: any): SaleItem {
+  const t = lineTotals(
+    Number(input.quantity),
+    input.unitPrice,
+    input.discount || 0,
+    input.taxRate || 0,
+  );
+  return { ...input, ...t };
+}
+function restoreFormControl(
+  target: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+) {
+  const prototype =
+    target instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  setter?.call(target, value);
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function productSearchRank(product: Product, query: string) {
+  if (product.barcode?.toLowerCase() === query) return 0;
+  if (product.sku?.toLowerCase() === query) return 1;
+  if (product.name.toLowerCase() === query) return 2;
+  if (product.name.toLowerCase().startsWith(query)) return 3;
+  if (
+    product.sku?.toLowerCase().startsWith(query) ||
+    product.barcode?.toLowerCase().startsWith(query)
+  )
+    return 4;
+  return 5;
+}
+function canReturnSale(sale: Sale, sales: Sale[]) {
+  if (sale.transactionType !== "sale") return false;
+  const returned = new Map<string, number>();
+  for (const transaction of sales.filter(
+    (value) => value.originalSaleId === sale.id,
+  ))
+    for (const item of transaction.returnedItems)
+      returned.set(
+        item.saleItemId,
+        (returned.get(item.saleItemId) || 0) + item.quantity,
+      );
+  return sale.items.some(
+    (item) => (returned.get(item.id) || 0) < item.quantity,
+  );
+}
+function saleTypeLabel(sale: Sale, sales: Sale[]) {
+  if (sale.transactionType !== "sale") return sale.transactionType;
+  const linked = sales.filter((value) => value.originalSaleId === sale.id),
+    count = linked
+      .flatMap((value) => value.returnedItems)
+      .reduce((sum, item) => sum + item.quantity, 0),
+    total = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+  return count <= 0
+    ? "sale"
+    : count >= total
+      ? "refunded"
+      : "partially refunded";
 }
 
-function ReturnModal({sale,mode,products,paymentMethods,sales,money,onClose,onDone}:{sale:Sale;mode:"refund"|"replacement";products:Product[];paymentMethods:string[];sales:Sale[];money:(n:number)=>string;onClose:()=>void;onDone:()=>Promise<void>}){
- const used=new Map<string,number>();for(const transaction of sales.filter(value=>value.originalSaleId===sale.id))for(const item of transaction.returnedItems)used.set(item.saleItemId,(used.get(item.saleItemId)||0)+item.quantity);
- const [quantities,setQuantities]=useState<Record<string,number>>({}),[reason,setReason]=useState(""),[restock,setRestock]=useState(true),[paymentMethod,setPaymentMethod]=useState(paymentMethods[0]||"Cash"),[productId,setProductId]=useState(""),[replacementQuantity,setReplacementQuantity]=useState(1),[busy,setBusy]=useState(false);
- const selected=Object.entries(quantities).filter(([,quantity])=>quantity>0).map(([saleItemId,quantity])=>({saleItemId,quantity}));
- const submit=async()=>{if(!selected.length)return alert("Select at least one returned item.");if(!reason.trim())return alert("Enter a return reason.");if(mode==="replacement"&&!productId)return alert("Choose a replacement product.");setBusy(true);try{const base={originalSaleId:sale.id,items:selected,reason,restock,paymentMethod};if(mode==="refund")await window.receiptStudio.refundSale(base);else await window.receiptStudio.replaceSale({...base,replacementItems:[{productId,quantity:replacementQuantity}]});await onDone();alert(mode==="refund"?"Refund recorded.":"Replacement recorded.")}catch(e:any){alert(e.message)}finally{setBusy(false)}};
- return <Modal title={mode==="refund"?"Refund sale":"Replace products"} onClose={onClose}><div className="space-y-4"><p className="text-sm text-[#69736f]">Original receipt {sale.receiptNumber}. Select the quantities being returned.</p>{sale.items.map(item=>{const max=Math.max(0,item.quantity-(used.get(item.id)||0));return <label className="flex items-center justify-between gap-3 border rounded-xl p-3" key={item.id}><span><b>{item.name}</b><span className="block text-xs">{money(item.lineTotal)} · {max} returnable</span></span><DraftNumberInput aria-label={`Return quantity for ${item.name}`} className="input !w-24" min={0} max={max} step={1} value={quantities[item.id]||0} onValueChange={value=>setQuantities({...quantities,[item.id]:Math.min(max,Math.max(0,Math.floor(value)))})}/></label>})}{mode==="replacement"&&<div className="grid grid-cols-[1fr_100px] gap-2"><label><span className="label">Replacement product</span><select className="input" value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(product=><option key={product.id} value={product.id}>{product.name} ({product.stock} in stock)</option>)}</select></label><label><span className="label">Quantity</span><DraftNumberInput className="input" min={1} step={1} value={replacementQuantity} onValueChange={value=>setReplacementQuantity(Math.max(1,Math.floor(value)))}/></label></div>}<label><span className="label">Reason</span><textarea className="input" required value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why is this being returned?"/></label><label><span className="label">Refund / difference method</span><select className="input" value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)}>{paymentMethods.map(method=><option key={method}>{method}</option>)}</select></label><label className="flex items-center gap-2"><input type="checkbox" checked={restock} onChange={e=>setRestock(e.target.checked)}/>Return usable items to stock</label><button disabled={busy} className="btn btn-primary w-full" onClick={()=>void submit()}>{busy?"Saving…":mode==="refund"?"Confirm refund":"Confirm replacement"}</button></div></Modal>
+export function SalesPage() {
+  const s = useStore(),
+    [query, setQuery] = useState(""),
+    [view, setView] = useState<Sale | undefined>(),
+    [action, setAction] = useState<
+      { sale: Sale; mode: "refund" | "replacement" } | undefined
+    >(),
+    shop = s.shops.find((x) => x.id === s.settings.activeShopId) || s.shops[0];
+  const list = [...s.sales]
+    .reverse()
+    .filter((x) =>
+      `${x.receiptNumber} ${x.customerSnapshot?.phone || ""} ${x.customerSnapshot?.name || ""} ${x.transactionType}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    );
+  return (
+    <div className="max-w-[1280px] mx-auto">
+      <p className="text-sm font-bold text-[#c84c5d] uppercase tracking-widest">
+        Records
+      </p>
+      <h1 className="text-3xl font-black mb-6">Sales history</h1>
+      <div className="surface">
+        <div className="p-4 border-b">
+          <div className="relative max-w-sm">
+            <Search
+              size={17}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8582] pointer-events-none"
+            />
+            <input
+              className="input !pl-10"
+              placeholder="Search receipt, customer or type…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        </div>
+        {!list.length ? (
+          <div className="p-6">
+            <Empty
+              title="No completed sales"
+              detail="Your first completed sale will be recorded here."
+            />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase bg-[#f7f7f3] text-[#78827f]">
+              <tr>
+                <th className="p-4">Receipt</th>
+                <th className="p-4">Type</th>
+                <th className="p-4">Date</th>
+                <th className="p-4">Payment</th>
+                <th className="p-4">Total</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {list.map((x) => (
+                <tr key={x.id}>
+                  <td className="p-4 font-bold">{x.receiptNumber}</td>
+                  <td className="p-4">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${x.transactionType === "refund" ? "bg-[#f9e4e1] text-[#9b4138]" : x.transactionType === "replacement" ? "bg-[#fff1ce] text-[#765817]" : "bg-[#e0f0e9] text-[#17604f]"}`}
+                    >
+                      {saleTypeLabel(x, s.sales)}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    {new Date(x.createdAt).toLocaleString()}
+                  </td>
+                  <td className="p-4">{x.paymentMethod}</td>
+                  <td className="p-4 font-bold">
+                    {formatMoney(x.total, shop?.currency, shop?.locale)}
+                  </td>
+                  <td className="p-4">
+                    <button className="btn !py-1.5" onClick={() => setView(x)}>
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {view && (
+        <Modal
+          wide
+          title={`Receipt ${view.receiptNumber}`}
+          onClose={() => setView(undefined)}
+        >
+          <div className="grid grid-cols-[1fr_320px] gap-6">
+            <div>
+              <h3 className="font-bold mb-3 capitalize">
+                {saleTypeLabel(view, s.sales)} details
+              </h3>
+              {view.originalSaleId && (
+                <p className="text-xs mb-3">
+                  Linked to{" "}
+                  {
+                    s.sales.find((x) => x.id === view.originalSaleId)
+                      ?.receiptNumber
+                  }
+                </p>
+              )}
+              {view.items.map((i) => (
+                <div className="flex justify-between py-2 border-b" key={i.id}>
+                  <span>
+                    {i.name} × {i.quantity}
+                  </span>
+                  <b>
+                    {formatMoney(i.lineTotal, shop?.currency, shop?.locale)}
+                  </b>
+                </div>
+              ))}
+              {view.pointsEarned > 0 && (
+                <p className="text-sm mt-3">
+                  Points earned: {view.pointsEarned}
+                </p>
+              )}
+              {view.pointsRedeemed > 0 && (
+                <p className="text-sm">
+                  Points redeemed: {view.pointsRedeemed}
+                </p>
+              )}
+              {view.pointsReversed > 0 && (
+                <p className="text-sm">
+                  Points reversed: {view.pointsReversed}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 mt-5">
+                <button
+                  className="btn"
+                  onClick={async () => {
+                    try {
+                      await window.receiptStudio.printSale(view.id);
+                      await s.load();
+                      alert("Print data sent.");
+                    } catch (e: any) {
+                      alert(e.message);
+                    }
+                  }}
+                >
+                  <Printer size={16} />
+                  Reprint
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => void window.receiptStudio.exportPdf(view.id)}
+                >
+                  <FileDown size={16} />
+                  Export PDF
+                </button>
+                {canReturnSale(view, s.sales) && (
+                  <>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setView(undefined);
+                        setAction({ sale: view, mode: "refund" });
+                      }}
+                    >
+                      <RefreshCcw size={16} />
+                      Refund
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setView(undefined);
+                        setAction({ sale: view, mode: "replacement" });
+                      }}
+                    >
+                      <Repeat2 size={16} />
+                      Replace
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <ReceiptPreview
+              template={s.templates.find((t) => t.id === view.templateId)}
+              sale={view}
+              shop={shop}
+            />
+          </div>
+        </Modal>
+      )}
+      {action && (
+        <ReturnModal
+          {...action}
+          products={s.products.filter((p) => p.isActive)}
+          paymentMethods={s.settings.paymentMethods}
+          sales={s.sales}
+          money={(value) => formatMoney(value, shop?.currency, shop?.locale)}
+          onClose={() => setAction(undefined)}
+          onDone={async () => {
+            await s.load();
+            setAction(undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReturnModal({
+  sale,
+  mode,
+  products,
+  paymentMethods,
+  sales,
+  money,
+  onClose,
+  onDone,
+}: {
+  sale: Sale;
+  mode: "refund" | "replacement";
+  products: Product[];
+  paymentMethods: string[];
+  sales: Sale[];
+  money: (n: number) => string;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const used = new Map<string, number>();
+  for (const transaction of sales.filter(
+    (value) => value.originalSaleId === sale.id,
+  ))
+    for (const item of transaction.returnedItems)
+      used.set(
+        item.saleItemId,
+        (used.get(item.saleItemId) || 0) + item.quantity,
+      );
+  const [quantities, setQuantities] = useState<Record<string, number>>({}),
+    [reason, setReason] = useState(""),
+    [restock, setRestock] = useState(true),
+    [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] || "Cash"),
+    [productId, setProductId] = useState(""),
+    [replacementQuantity, setReplacementQuantity] = useState(1),
+    [busy, setBusy] = useState(false);
+  const selected = Object.entries(quantities)
+    .filter(([, quantity]) => quantity > 0)
+    .map(([saleItemId, quantity]) => ({ saleItemId, quantity }));
+  const submit = async () => {
+    if (!selected.length) return alert("Select at least one returned item.");
+    if (!reason.trim()) return alert("Enter a return reason.");
+    if (mode === "replacement" && !productId)
+      return alert("Choose a replacement product.");
+    setBusy(true);
+    try {
+      const base = {
+        originalSaleId: sale.id,
+        items: selected,
+        reason,
+        restock,
+        paymentMethod,
+      };
+      if (mode === "refund") await window.receiptStudio.refundSale(base);
+      else
+        await window.receiptStudio.replaceSale({
+          ...base,
+          replacementItems: [{ productId, quantity: replacementQuantity }],
+        });
+      await onDone();
+      alert(mode === "refund" ? "Refund recorded." : "Replacement recorded.");
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={mode === "refund" ? "Refund sale" : "Replace products"}
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-[#69736f]">
+          Original receipt {sale.receiptNumber}. Select the quantities being
+          returned.
+        </p>
+        {sale.items.map((item) => {
+          const max = Math.max(0, item.quantity - (used.get(item.id) || 0));
+          return (
+            <label
+              className="flex items-center justify-between gap-3 border rounded-xl p-3"
+              key={item.id}
+            >
+              <span>
+                <b>{item.name}</b>
+                <span className="block text-xs">
+                  {money(item.lineTotal)} · {max} returnable
+                </span>
+              </span>
+              <DraftNumberInput
+                aria-label={`Return quantity for ${item.name}`}
+                className="input !w-24"
+                min={0}
+                max={max}
+                step={1}
+                value={quantities[item.id] || 0}
+                onValueChange={(value) =>
+                  setQuantities({
+                    ...quantities,
+                    [item.id]: Math.min(max, Math.max(0, Math.floor(value))),
+                  })
+                }
+              />
+            </label>
+          );
+        })}
+        {mode === "replacement" && (
+          <div className="grid grid-cols-[1fr_100px] gap-2">
+            <label>
+              <span className="label">Replacement product</span>
+              <select
+                className="input"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+              >
+                <option value="">Choose product</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} ({product.stock} in stock)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="label">Quantity</span>
+              <DraftNumberInput
+                className="input"
+                min={1}
+                step={1}
+                value={replacementQuantity}
+                onValueChange={(value) =>
+                  setReplacementQuantity(Math.max(1, Math.floor(value)))
+                }
+              />
+            </label>
+          </div>
+        )}
+        <label>
+          <span className="label">Reason</span>
+          <textarea
+            className="input"
+            required
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why is this being returned?"
+          />
+        </label>
+        <label>
+          <span className="label">Refund / difference method</span>
+          <select
+            className="input"
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+          >
+            {paymentMethods.map((method) => (
+              <option key={method}>{method}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={restock}
+            onChange={(e) => setRestock(e.target.checked)}
+          />
+          Return usable items to stock
+        </label>
+        <button
+          disabled={busy}
+          className="btn btn-primary w-full"
+          onClick={() => void submit()}
+        >
+          {busy
+            ? "Saving…"
+            : mode === "refund"
+              ? "Confirm refund"
+              : "Confirm replacement"}
+        </button>
+      </div>
+    </Modal>
+  );
 }

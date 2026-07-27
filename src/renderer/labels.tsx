@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import bwipjs from "bwip-js/browser";
 import type { LabelElement, LabelTemplate } from "../../shared/schemas";
 import { bindProductLabel, findAvailableLabelPosition, sampleLabelProduct } from "../../shared/productLabel";
-import { DraftNumberInput, Empty, Field } from "./components";
+import { DraftNumberInput, Empty, Field, Notice } from "./components";
 import { useStore } from "./store";
 
 const now = () => new Date().toISOString();
@@ -65,8 +65,9 @@ export function LabelsPage() {
   const [draft, setDraft] = useState<LabelTemplate | undefined>(store.labels[0]);
   const [selected, setSelected] = useState("");
   const [saved, setSaved] = useState(store.labels[0] ? Boolean(store.labels[0].savedAt) : true);
-  const [printerId, setPrinterId] = useState("");
+  const [printerId, setPrinterId] = useState(store.labels[0]?.printerId || "");
   const [printing, setPrinting] = useState(false);
+  const [notice, setNotice] = useState<{ message: string; error?: boolean }>();
   const [gesture, setGesture] = useState<{
     id: string;
     mode: "move" | "resize";
@@ -94,6 +95,7 @@ export function LabelsPage() {
       setDraft(value);
       setSaved(Boolean(value.savedAt));
       setSelected("");
+      setPrinterId(value.printerId || "");
     }
   }, [selectedId]);
 
@@ -114,6 +116,7 @@ export function LabelsPage() {
       heightMm: 25,
       dpi: 203,
       orientation: "portrait",
+      printerId: labelPrinters[0]?.id,
       elements: [],
       createdAt: now(),
       updatedAt: now()
@@ -122,6 +125,7 @@ export function LabelsPage() {
     setDraft(value);
     setSelected("");
     setSaved(false);
+    setPrinterId(value.printerId || "");
   };
 
   const save = async () => {
@@ -145,6 +149,7 @@ export function LabelsPage() {
     setDraft(value);
     setSelected("");
     setSaved(Boolean(value.savedAt));
+    setPrinterId(value.printerId || "");
   };
 
   const add = (type: LabelElement["type"], binding?: LabelElement["binding"]) => {
@@ -184,9 +189,9 @@ export function LabelsPage() {
     setPrinting(true);
     try {
       const result = await window.receiptStudio.printLabelTest(draft.id, printerId);
-      alert(result.message || "Product label test sent to printer.");
+      setNotice({ message: result.message || "Product label test sent to printer." });
     } catch (error: any) {
-      alert(error.message);
+      setNotice({ message: error.message, error: true });
     } finally {
       setPrinting(false);
     }
@@ -218,6 +223,7 @@ export function LabelsPage() {
   };
 
   return <div className="-m-7 h-[calc(100%+3.5rem)] min-h-[720px] flex flex-col">
+    {notice && <Notice message={notice.message} error={notice.error} onClose={() => setNotice(undefined)} />}
     <header className="h-16 bg-white border-b flex items-center gap-3 px-5">
       <select className="input !w-52" value={selectedId} onChange={event => chooseTemplate(event.target.value)}>
         {!selectedId && <option value="">Unsaved new template</option>}
@@ -227,17 +233,23 @@ export function LabelsPage() {
       <span className={`text-xs ${saved ? "text-[#64746f]" : "text-[#a24d00] font-semibold"}`}>{saved ? "Saved locally" : "Unsaved changes"}</span>
       <button className="btn btn-primary ml-2" disabled={saved && isPersisted} onClick={() => void save()}>Save label</button>
       <button className="btn" onClick={create}><Plus size={15} />New</button>
+      <div className="ml-auto flex items-center gap-2">
+        <select className="input !w-52" aria-label="Assigned label printer" value={printerId} onChange={event => {
+          const value = event.target.value;
+          setPrinterId(value);
+          mutate(template => ({ ...template, printerId: value || undefined }));
+        }}>
+          <option value="">No assigned label printer</option>
+          {labelPrinters.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
+        </select>
       {saved && isPersisted
-        ? <div className="ml-auto flex items-center gap-2">
-          <select className="input !w-52" value={printerId} onChange={event => setPrinterId(event.target.value)}>
-            <option value="">Choose label printer</option>
-            {labelPrinters.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
-          </select>
+        ? <>
           <button className="btn btn-primary" disabled={!printerId || printing} onClick={() => void printTest()}>
             <Printer size={16} />{printing ? "Printing…" : "Print test"}
           </button>
-        </div>
-        : <span className="ml-auto text-xs text-[#6c7773]">Save the label to enable test printing.</span>}
+        </>
+        : <span className="text-xs text-[#6c7773]">Save to test print.</span>}
+      </div>
     </header>
 
     <div className="grid grid-cols-[220px_1fr_300px] flex-1 min-h-0">
