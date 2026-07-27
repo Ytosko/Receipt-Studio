@@ -292,14 +292,15 @@ async function labelHtml(label: LabelTemplate) {
 async function printLabelTemplate(
   label: LabelTemplate,
   printer: PrinterProfile,
+  copies = 1,
 ) {
   if (printer.printerType !== "label")
     throw new Error("Choose a label printer profile");
   if (printer.connectionType === "network") {
     const command =
       printer.commandLanguage === "tspl"
-        ? labelToTspl(label, printer)
-        : labelToZpl(label, printer);
+        ? labelToTspl(label, printer, copies)
+        : labelToZpl(label, printer, copies);
     return sendNetwork(printer, Buffer.from(command, "utf8"));
   }
   if (!printer.system?.deviceName)
@@ -326,14 +327,15 @@ async function printLabelTemplate(
             width: Math.round(label.widthMm * 1000),
             height: Math.round(label.heightMm * 1000),
           },
+          copies,
         },
         (ok, reason) =>
           ok
             ? resolve({
                 ok: true,
                 message: printer.exactLabelSize
-                  ? `Label sent at ${label.widthMm} × ${label.heightMm} mm. The printer driver must support this media size.`
-                  : "Label sent to the Windows print dialog",
+                  ? `${copies} label${copies === 1 ? "" : "s"} sent at ${label.widthMm} × ${label.heightMm} mm. The printer driver must support this media size.`
+                  : `${copies} label${copies === 1 ? "" : "s"} sent to the Windows print dialog`,
               })
             : reject(new Error(reason)),
       ),
@@ -750,7 +752,8 @@ function registerIpc() {
   ipcMain.handle("print:product-label", async (_, p) => {
     const productId = z.string().parse(p.productId),
       labelId = z.string().parse(p.labelId),
-      printerId = z.string().parse(p.printerId);
+      printerId = z.string().parse(p.printerId),
+      copies = z.number().int().min(1).max(999).default(1).parse(p.copies);
     const { label, printer } = await getLabelPrintSelection(labelId, printerId),
       products = (await repo.load("products")) as any[];
     const savedProduct = products.find((x) => x.id === productId);
@@ -764,9 +767,10 @@ function registerIpc() {
     const result = await printLabelTemplate(
       bindProductLabel(label, product, shop),
       printer,
+      copies,
     );
     await log(
-      `PRODUCT_LABEL_PRINT_OK printer=${printer.id} label=${label.id} product=${product.id}`,
+      `PRODUCT_LABEL_PRINT_OK printer=${printer.id} label=${label.id} product=${product.id} copies=${copies}`,
     );
     return result;
   });

@@ -8,11 +8,23 @@ import { Barcode } from "lucide-react";
 import { DraftNumberInput, Field } from "./components";
 import type {
   Customer,
+  LabelTemplate,
   PrinterProfile,
   Product,
   Shop,
 } from "../../shared/schemas";
 const now = () => new Date().toISOString();
+const blankProduct = (shopId?: string, barcode?: string): Product => ({
+  id: crypto.randomUUID(),
+  shopIds: shopId ? [shopId] : [],
+  name: "",
+  barcode,
+  price: 0,
+  stock: 0,
+  isActive: true,
+  createdAt: now(),
+  updatedAt: now(),
+});
 export function ShopForm({
   value,
   onSave,
@@ -191,6 +203,8 @@ export function ProductForm({
   value,
   shopId,
   products = [],
+  labelTemplates = [],
+  labelPrinters = [],
   onSave,
   onSaveAndPrint,
   canPrintLabel = false,
@@ -198,22 +212,31 @@ export function ProductForm({
   value?: Product;
   shopId?: string;
   products?: Product[];
+  labelTemplates?: LabelTemplate[];
+  labelPrinters?: PrinterProfile[];
   onSave: (v: Product) => void | Promise<void>;
-  onSaveAndPrint?: (v: Product) => void | Promise<void>;
+  onSaveAndPrint?: (
+    v: Product,
+    selection: { labelId: string; printerId: string; copies: number },
+  ) => void | Promise<void>;
   canPrintLabel?: boolean;
 }) {
-  const [v, setV] = useState<Product>(
-    value || {
-      id: crypto.randomUUID(),
-      shopIds: shopId ? [shopId] : [],
-      name: "",
-      price: 0,
-      stock: 0,
-      isActive: true,
-      createdAt: now(),
-      updatedAt: now(),
-    },
-  );
+  const labelPreferenceKey = `receipt-studio:last-label-template:${shopId || "all"}`,
+    preferredLabelId = (() => {
+      try {
+        const saved = localStorage.getItem(labelPreferenceKey);
+        if (saved && labelTemplates.some((template) => template.id === saved))
+          return saved;
+      } catch {
+        // A disabled browser storage area should not block product entry.
+      }
+      return labelTemplates[0]?.id || "";
+    })();
+  const [v, setV] = useState<Product>(value || blankProduct(shopId)),
+    [receiving, setReceiving] = useState<Product>(),
+    [quantityReceived, setQuantityReceived] = useState(1),
+    [labelTemplateId, setLabelTemplateId] = useState(preferredLabelId),
+    [labelCopies, setLabelCopies] = useState(1);
   const barcodeRef = useRef<HTMLInputElement>(null),
     latest = useRef(v),
     scanner = useRef<{
@@ -226,13 +249,47 @@ export function ProductForm({
       "Scan a barcode from any field. It will not submit the form.",
     );
   latest.current = v;
-  const duplicate =
-    v.barcode &&
-    products.find(
-      (product) =>
-        product.id !== v.id &&
-        product.barcode?.toLowerCase() === v.barcode?.trim().toLowerCase(),
+  const selectedLabel = labelTemplates.find(
+      (template) => template.id === labelTemplateId,
+    ),
+    assignedPrinter = labelPrinters.find(
+      (printer) => printer.id === selectedLabel?.printerId,
     );
+  const duplicate = v.barcode
+    ? products.find(
+        (product) =>
+          product.id !== v.id &&
+          product.barcode?.toLowerCase() === v.barcode?.trim().toLowerCase(),
+      )
+    : undefined;
+  const applyBarcode = (code: string) => {
+    const normalized = code.trim(),
+      existing =
+        !value?.id &&
+        products.find(
+          (product) =>
+            product.barcode?.trim().toLowerCase() === normalized.toLowerCase(),
+        );
+    if (existing) {
+      setReceiving(existing);
+      setV({ ...existing });
+      setQuantityReceived(1);
+      setLabelCopies(1);
+      setScanMessage(
+        `${existing.name} found with ${existing.stock} in stock. Enter the received quantity below.`,
+      );
+      return;
+    }
+    setReceiving(undefined);
+    setV(
+      receiving
+        ? blankProduct(shopId, normalized)
+        : { ...latest.current, barcode: normalized },
+    );
+    setScanMessage(
+      `Barcode ${normalized} captured. Review the product, then click Save product.`,
+    );
+  };
   const captureScan = (event: ReactKeyboardEvent<HTMLFormElement>) => {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     const time = Date.now(),
@@ -240,18 +297,16 @@ export function ProductForm({
     if (event.key === "Enter" || event.key === "Tab") {
       const fast =
           state.value.length >= 4 &&
-      time - state.last < 250 &&
+          time - state.last < 250 &&
           state.started > 0 &&
-      time - state.started < 3000,
+          time - state.started < 3000,
         code = state.value;
       scanner.current = { value: "", started: 0, last: 0 };
       if (!fast) return;
       event.preventDefault();
       event.stopPropagation();
-      setV({ ...(state.original || latest.current), barcode: code });
-      setScanMessage(
-        `Barcode ${code} captured. Review the product, then click Save product.`,
-      );
+      latest.current = state.original || latest.current;
+      applyBarcode(code);
       window.setTimeout(() => barcodeRef.current?.focus(), 0);
       return;
     }
@@ -278,19 +333,36 @@ export function ProductForm({
         e.preventDefault();
         if (duplicate)
           return alert(`Barcode already belongs to ${duplicate.name}.`);
-        const product = {
-          ...v,
-          barcode: v.barcode?.trim(),
-          updatedAt: now(),
-        };
         const action = (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
           "data-action",
         );
+        if (action === "save-print" && !assignedPrinter)
+          return alert(
+            "Choose a saved label template that has an assigned label printer.",
+          );
+        const product = {
+          ...v,
+          barcode: v.barcode?.trim(),
+          stock: receiving
+            ? receiving.stock + Math.max(1, Math.floor(quantityReceived))
+            : v.stock,
+          updatedAt: now(),
+        };
         if (action === "save-print" && onSaveAndPrint)
-          void onSaveAndPrint(product);
+          void onSaveAndPrint(product, {
+            labelId: selectedLabel!.id,
+            printerId: assignedPrinter!.id,
+            copies: Math.max(1, Math.floor(labelCopies)),
+          });
         else void onSave(product);
       }}
     >
+      {receiving && (
+        <div className="col-span-2 rounded-xl border border-[#b8d9cf] bg-[#edf7f4] p-4 text-sm text-[#244f48]">
+          <b>Existing product found.</b> Receiving stock will update{" "}
+          {receiving.name} instead of creating a duplicate product.
+        </div>
+      )}
       <div className="col-span-2">
         <Field label="Product name">
           <input
@@ -315,18 +387,38 @@ export function ProductForm({
           }
         />
       </Field>
-      <Field label="Stock quantity">
-        <DraftNumberInput
-          required
-          min={0}
-          step={1}
-          className="input"
-          value={v.stock}
-          onValueChange={(value) =>
-            setV({ ...v, stock: Math.max(0, Math.floor(value)) })
-          }
-        />
+      <Field label={receiving ? "Current stock" : "Stock quantity"}>
+        {receiving ? (
+          <input className="input" readOnly value={receiving.stock} />
+        ) : (
+          <DraftNumberInput
+            required
+            min={0}
+            step={1}
+            className="input"
+            value={v.stock}
+            onValueChange={(value) =>
+              setV({ ...v, stock: Math.max(0, Math.floor(value)) })
+            }
+          />
+        )}
       </Field>
+      {receiving && (
+        <Field label="Quantity received">
+          <DraftNumberInput
+            required
+            min={1}
+            step={1}
+            className="input"
+            value={quantityReceived}
+            onValueChange={(value) => {
+              const quantity = Math.max(1, Math.floor(value));
+              setQuantityReceived(quantity);
+              setLabelCopies(Math.min(999, quantity));
+            }}
+          />
+        </Field>
+      )}
       <Field label="SKU">
         <input
           className="input"
@@ -343,6 +435,17 @@ export function ProductForm({
               placeholder="Scan or enter barcode"
               value={v.barcode || ""}
               onChange={(e) => setV({ ...v, barcode: e.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !receiving && duplicate?.barcode) {
+                  event.preventDefault();
+                  applyBarcode(duplicate.barcode);
+                }
+              }}
+              onBlur={(event) => {
+                if (!value && !receiving && event.target.value.trim())
+                  applyBarcode(event.target.value);
+              }}
+              readOnly={Boolean(receiving)}
             />
             <button
               type="button"
@@ -387,15 +490,61 @@ export function ProductForm({
           />
         </Field>
       </div>
+      {canPrintLabel && (
+        <div className="col-span-2 rounded-xl border border-[#deded6] bg-[#fafaf7] p-4">
+          <p className="font-bold text-sm">Label printing</p>
+          <p className="text-xs text-[#68736f] mt-1 mb-3">
+            The assigned printer is selected automatically from the template.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Label template">
+              <select
+                className="input"
+                value={labelTemplateId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setLabelTemplateId(id);
+                  try {
+                    localStorage.setItem(labelPreferenceKey, id);
+                  } catch {
+                    // The selection still works for this session.
+                  }
+                }}
+              >
+                {labelTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Labels to print">
+              <DraftNumberInput
+                min={1}
+                max={999}
+                step={1}
+                className="input"
+                value={labelCopies}
+                onValueChange={(value) =>
+                  setLabelCopies(Math.max(1, Math.min(999, Math.floor(value))))
+                }
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-[#68736f] mt-2">
+            Printer: {assignedPrinter?.name || "No assigned label printer"}
+          </p>
+        </div>
+      )}
       <div className="col-span-2 flex justify-end gap-2">
         {canPrintLabel && (
           <button
             type="submit"
             data-action="save-print"
-            disabled={Boolean(duplicate)}
+            disabled={Boolean(duplicate) || !assignedPrinter}
             className="btn"
           >
-            Save & print label
+            {receiving ? "Add stock & print labels" : "Save & print label"}
           </button>
         )}
         <button
@@ -403,7 +552,7 @@ export function ProductForm({
           disabled={Boolean(duplicate)}
           className="btn btn-primary"
         >
-          Save product
+          {receiving ? "Add stock" : value ? "Save changes" : "Save product"}
         </button>
       </div>
     </form>
@@ -962,9 +1111,9 @@ export function PrinterForm({
                     Print silently at the template’s exact size
                   </b>
                   <span className="block text-xs text-[#68736f] mt-1">
-                    Recommended for Windows/USB label printers. Turning this
-                    off opens the Windows dialog, where the driver may replace
-                    the custom label size with its default paper.
+                    Recommended for Windows/USB label printers. Turning this off
+                    opens the Windows dialog, where the driver may replace the
+                    custom label size with its default paper.
                   </span>
                   <span className="block text-xs text-[#7a5b24] mt-2">
                     If the first job advances a blank label, put the printer in

@@ -192,6 +192,11 @@ export function EntityPage({ kind }: { kind: Kind }) {
   const productLabels = store.labels.filter(
     (value) => value.savedAt && (!value.shopId || value.shopId === shop?.id),
   );
+  const printableProductLabels = productLabels.filter(
+    (template) =>
+      template.printerId &&
+      labelPrinters.some((printer) => printer.id === template.printerId),
+  );
   const receiptTemplates = store.templates.filter(
     (value) => !shop || value.shopId === shop.id,
   );
@@ -254,12 +259,14 @@ export function EntityPage({ kind }: { kind: Kind }) {
     const assigned =
       printer.printerType === "label"
         ? productLabels.find((template) => template.printerId === printer.id)
-        : receiptTemplates.find((template) => template.printerId === printer.id);
+        : receiptTemplates.find(
+            (template) => template.printerId === printer.id,
+          );
     setTestTemplateId(
       assigned?.id ||
         (printer.printerType === "label"
-        ? productLabels[0]?.id || ""
-        : shop?.defaultTemplateId || receiptTemplates[0]?.id || ""),
+          ? productLabels[0]?.id || ""
+          : shop?.defaultTemplateId || receiptTemplates[0]?.id || ""),
     );
   };
 
@@ -274,10 +281,30 @@ export function EntityPage({ kind }: { kind: Kind }) {
     setLabelTemplateId(template?.id || "");
   };
 
-  const saveAndPrintProduct = async (product: any) => {
+  const saveAndPrintProduct = async (
+    product: any,
+    selection: { labelId: string; printerId: string; copies: number },
+  ) => {
     await store.upsert("products", product);
     setEditing(false);
-    openProductLabel(product);
+    try {
+      const result = await window.receiptStudio.printProductLabel(
+        product.id,
+        selection.labelId,
+        selection.printerId,
+        selection.copies,
+      );
+      setNotice({
+        message:
+          result.message ||
+          `${selection.copies} product label${selection.copies === 1 ? "" : "s"} sent to printer.`,
+      });
+    } catch (error: any) {
+      setNotice({
+        message: `Product saved, but its label could not be printed: ${error.message}`,
+        error: true,
+      });
+    }
   };
 
   const printProductLabel = async () => {
@@ -290,7 +317,9 @@ export function EntityPage({ kind }: { kind: Kind }) {
         labelPrinterId,
       );
       setLabelProduct(false);
-      setNotice({ message: result.message || "Product label sent to printer." });
+      setNotice({
+        message: result.message || "Product label sent to printer.",
+      });
     } catch (error: any) {
       setNotice({ message: error.message, error: true });
     } finally {
@@ -358,6 +387,24 @@ export function EntityPage({ kind }: { kind: Kind }) {
           </button>
         </div>
       )}
+      {kind === "products" &&
+        productLabels.length > 0 &&
+        !printableProductLabels.length && (
+          <div className="surface p-4 mb-4 bg-[#fff7e8] border-[#ecd39f] text-sm flex items-center justify-between">
+            <span>
+              <b>No label template has an assigned label printer.</b> Assign a
+              label printer in the template designer to enable one-step product
+              and stock label printing.
+            </span>
+            <button
+              className="btn"
+              onClick={() => (location.hash = "#/labels")}
+            >
+              <Tags size={15} />
+              Assign printer
+            </button>
+          </div>
+        )}
       <div className="surface">
         <div className="p-4 border-b flex justify-between">
           <div className="relative w-80">
@@ -537,10 +584,10 @@ export function EntityPage({ kind }: { kind: Kind }) {
               value={editing.id ? editing : undefined}
               shopId={shop?.id}
               products={store.products}
+              labelTemplates={printableProductLabels}
+              labelPrinters={labelPrinters}
               onSave={save}
-              canPrintLabel={
-                productLabels.length > 0 && labelPrinters.length > 0
-              }
+              canPrintLabel={printableProductLabels.length > 0}
               onSaveAndPrint={saveAndPrintProduct}
             />
           ) : kind === "customers" ? (

@@ -1,172 +1,254 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 test.setTimeout(60_000);
-test("first launch renders the setup workflow",async()=>{
- const app=await electron.launch({args:["."],env:{...process.env,RECEIPT_STUDIO_E2E:"1",RECEIPT_STUDIO_E2E_RUN:`${Date.now()}-${Math.random().toString(16).slice(2)}`}});
- const page=await app.firstWindow();
- await expect(page.getByText("Let’s set up your counter.")).toBeVisible();
- await page.getByRole("button",{name:/Create my shop/}).click();
- await page.getByLabel("Shop name").fill("Test Shop");
- await page.getByRole("button",{name:/Create shop/}).click();
- await expect(page.locator("header").getByText("Test Shop")).toBeVisible();
- await page.getByRole("link",{name:"Receipt Templates"}).click();
- await expect(page.getByText("Paid by CASH",{exact:true})).toBeVisible();
- await expect(page.getByText("Amount paid: $25.00",{exact:true})).toBeVisible();
- await expect(page.getByText("Change: $3.95",{exact:true})).toBeVisible();
- await page.getByAltText("Scannable receipt QR code").click();
- await expect(page.getByLabel("Printed QR size")).toHaveValue("5");
- await expect(page.getByLabel("Alignment")).toHaveValue("center");
- await page.getByRole("link",{name:"Printers"}).click();
- await expect(page.getByText("No printers yet")).toBeVisible();
- await page.getByRole("button",{name:"Add printer"}).first().click();
- await page.getByLabel("Profile name").fill("Test receipt printer");
- await page.getByLabel("Connection").selectOption("network");
- await page.getByLabel("IP / host").fill("127.0.0.1");
- await page.getByRole("button",{name:"Save printer"}).click();
- await page.getByRole("button",{name:"Print test"}).click();
- await expect(page.getByText("Choose a saved receipt template.")).toBeVisible();
- await expect(page.getByLabel("Receipt template")).toHaveValue(/.+/);
- await page.getByRole("button",{name:"Cancel"}).click();
- await page.getByRole("link",{name:"Products"}).click();
- await page.getByRole("button",{name:"Add product"}).click();
- await page.getByLabel("Product name").click();
- await page.keyboard.type("123456789012");
- await page.keyboard.press("Enter");
- await expect(page.getByLabel("Product name")).toHaveValue("");
- await expect(page.getByLabel("Barcode")).toHaveValue("123456789012");
- await expect(page.getByRole("button",{name:"Save product"})).toBeVisible();
- await page.getByLabel("Product name").fill("Coffee Beans");
- await page.getByLabel("Price").press("Control+A");
- await page.getByLabel("Price").press("Backspace");
- await page.getByLabel("Price").type("450");
- await page.getByLabel("Stock quantity").press("Control+A");
- await page.getByLabel("Stock quantity").press("Backspace");
- await page.getByLabel("Stock quantity").type("12");
- await page.getByLabel("Tax rate %").press("Control+A");
- await page.getByLabel("Tax rate %").press("Backspace");
- await page.getByLabel("Tax rate %").type("15");
- await expect(page.getByLabel("Stock quantity")).toHaveValue("12");
- await expect(page.getByLabel("Tax rate %")).toHaveValue("15");
- await page.getByRole("button",{name:"Save product"}).click();
- await expect(page.getByRole("button",{name:"Save product"})).toHaveCount(0);
- const productManagementSearch=page.getByPlaceholder("Search name, SKU or scan barcode…");
- await page.getByRole("heading",{name:"Products",exact:true}).click();
- await page.keyboard.type("123456789012");
- await page.keyboard.press("Enter");
- await expect(productManagementSearch).toHaveValue("123456789012");
- await expect(page.getByText("Product labels are not set up.")).toBeVisible();
- await expect(page.getByRole("button",{name:"Print label"})).toHaveCount(0);
- await page.getByRole("link",{name:"Settings"}).click();
- await expect(page.getByText("Appearance",{exact:true})).toHaveCount(0);
- await page.getByLabel("Enable loyalty points").check();
- await page.getByLabel("Spend amount (USD)").fill("100");
- page.once("dialog",dialog=>void dialog.accept());
- await page.getByRole("button",{name:"Save loyalty settings"}).click();
- await page.getByRole("link",{name:"New Sale"}).click();
- const productSearch=page.getByLabel("Product search or barcode scan");
- await expect(productSearch).toBeVisible();
- await page.getByLabel("Customer phone").fill("01700000001");
- await page.getByRole("button",{name:"Start another sale"}).click();
- await expect(page.getByLabel("Customer phone").filter({visible:true})).toHaveValue("");
- await expect(page.getByText("Your cart is empty").filter({visible:true})).toBeVisible();
- await page.getByLabel("Customer phone").filter({visible:true}).fill("01800000002");
- await page.getByText("Sale 1",{exact:true}).click();
- await expect(page.getByLabel("Customer phone").filter({visible:true})).toHaveValue("01700000001");
- await page.getByLabel("Close Sale 2").click();
- expect(Number.parseFloat(await productSearch.evaluate(element=>getComputedStyle(element).paddingLeft))).toBeGreaterThan(30);
- await productSearch.fill("Coffee");
- await expect(page.getByRole("listbox",{name:"Product matches"})).toBeVisible();
- expect(await page.getByRole("listbox",{name:"Product matches"}).getByRole("option").count()).toBeLessThanOrEqual(15);
- await page.getByRole("option",{name:/Coffee Beans/}).dispatchEvent("click");
- await page.getByRole("button",{name:"Remove Coffee Beans"}).click();
- await page.getByLabel("Customer phone").fill("017");
- await page.keyboard.type("123456789012");
- await page.keyboard.press("Enter");
- await expect(page.getByText("Coffee Beans added")).toBeVisible();
- await expect(page.getByLabel("Customer phone")).toHaveValue("017");
- await page.getByLabel("Customer phone").fill("01715319802");
- await expect(page.getByText(/New number/)).toBeVisible();
- await page.getByRole("button",{name:"Add customer details"}).click();
-  await expect(page.getByRole("textbox", { name: "Phone", exact: true })).toHaveValue("01715319802");
- await page.getByLabel("Customer name (optional)").fill("Test Customer");
- await page.getByRole("button",{name:"Save customer"}).click();
- await expect(page.getByText(/Selected: Test Customer/)).toBeVisible();
- await page.getByLabel("Customer phone").fill("01715");
- await page.getByRole("option",{name:/01715319802/}).dispatchEvent("click");
- await expect(page.getByLabel("Customer phone")).toHaveValue("01715319802");
- await expect(page.getByRole("button",{name:"Redeem"})).toBeDisabled();
- await expect(page.getByText("This customer does not have redeemable points yet.")).toBeVisible();
- await page.getByLabel("Amount paid").fill("7,500.50");
- await expect(page.getByLabel("Amount paid")).toHaveValue("7500.50");
- await expect(page.getByText("Change due")).toBeVisible();
- await page.getByLabel("Customer phone").fill("01900000000");
- page.once("dialog",dialog=>void dialog.accept());
- await page.getByRole("button",{name:"Complete without printing"}).click();
- await page.getByRole("link",{name:"Customers"}).click();
- await expect(page.getByRole("cell",{name:"01900000000"}).first()).toBeVisible();
- const customerRow=page.getByRole("row").filter({hasText:"01900000000"});
- await expect(customerRow.getByRole("cell",{name:"5",exact:true})).toBeVisible();
- await page.getByRole("link",{name:"New Sale"}).click();
- await page.getByLabel("Product search or barcode scan").fill("123456789012");
- await page.getByLabel("Product search or barcode scan").press("Enter");
- await page.getByLabel("Customer phone").fill("01900");
- await page.getByRole("option",{name:/01900000000/}).dispatchEvent("click");
- await page.getByLabel("Points to redeem").fill("5");
- await page.getByRole("button",{name:"Redeem"}).click();
- await expect(page.getByText("5 points applied")).toBeVisible();
- await page.getByRole("button",{name:"Remove",exact:true}).click();
- await expect(page.getByText("5 points applied")).toHaveCount(0);
- await page.getByRole("link",{name:"Sales"}).click();
- await page.getByRole("button",{name:"View"}).click();
- await page.getByRole("button",{name:"Refund"}).click();
- await page.getByLabel("Return quantity for Coffee Beans").fill("1");
- await page.getByLabel("Reason").fill("Customer return");
- page.once("dialog",dialog=>void dialog.accept());
- await page.getByRole("button",{name:"Confirm refund"}).click();
- await expect(page.getByText("refund",{exact:true}).first()).toBeVisible();
- await page.getByRole("link",{name:"New Sale"}).click();
- await page.getByLabel("Product search or barcode scan").fill("123456789012");
- await page.getByLabel("Product search or barcode scan").press("Enter");
- await page.getByLabel("Customer phone").fill("01900");
- await page.getByRole("option",{name:/01900000000/}).dispatchEvent("click");
- page.once("dialog",dialog=>void dialog.accept());
- await page.getByRole("button",{name:"Complete without printing"}).click();
- await expect(page.getByText("Your cart is empty")).toBeVisible();
- await page.getByRole("link",{name:"Sales"}).click();
- const latestSaleRow=page.getByRole("row").filter({has:page.getByText("sale",{exact:true})}).first();
- await latestSaleRow.getByRole("button",{name:"View"}).click();
- await page.getByRole("button",{name:"Replace"}).click();
- await page.getByLabel("Return quantity for Coffee Beans").fill("1");
- await page.getByLabel("Replacement product").selectOption({index:1});
- await page.getByLabel("Reason").fill("Exchange");
- page.once("dialog",dialog=>void dialog.accept());
- await page.getByRole("button",{name:"Confirm replacement"}).click();
- await expect(page.getByText("replacement",{exact:true}).first()).toBeVisible();
- await page.getByRole("link",{name:"Label Templates"}).click();
- await page.getByRole("button",{name:"Create product label"}).click();
- await expect(page.getByText("Unsaved changes")).toBeVisible();
- await expect(page.getByRole("button",{name:"Print test"})).toHaveCount(0);
- await expect(page.getByText("Save to test print.")).toBeVisible();
- await page.getByLabel("Width mm").fill("63.5");
- await page.getByLabel("Height mm").fill("38.1");
- await expect(page.getByText("House Blend Coffee",{exact:true})).toHaveCount(0);
- await page.getByRole("button",{name:"Product name"}).click();
- const productNameElement=page.getByText("House Blend Coffee",{exact:true}).locator("..");
- const productNameBox=await productNameElement.boundingBox();
- await page.getByRole("button",{name:"Product SKU"}).click();
- const skuBox=await page.getByText("SKU: COFFEE-001",{exact:true}).locator("..").boundingBox();
- expect(productNameBox).not.toBeNull();
- expect(skuBox).not.toBeNull();
- expect(skuBox!.y).toBeGreaterThanOrEqual(productNameBox!.y+productNameBox!.height);
- await page.getByText("House Blend Coffee",{exact:true}).click();
- await page.getByLabel("Alignment").selectOption("center");
- await expect(page.getByText("House Blend Coffee",{exact:true}).locator("..")).toHaveCSS("text-align","center");
- await page.getByRole("button",{name:"Save label"}).click();
- await expect(page.getByText("Saved locally")).toBeVisible();
- await expect(page.getByRole("button",{name:"Print test"})).toBeDisabled();
- await page.getByRole("link",{name:"Products"}).click();
- await page.getByRole("button",{name:"Print label"}).click();
- await expect(page.getByLabel("Label template")).toHaveValue(/.+/);
- await expect(page.getByText(/Add a printer profile with type/)).toBeVisible();
- await page.getByRole("button",{name:"Cancel"}).click();
- await app.close();
+test("first launch renders the setup workflow", async () => {
+  const app = await electron.launch({
+    args: ["."],
+    env: {
+      ...process.env,
+      RECEIPT_STUDIO_E2E: "1",
+      RECEIPT_STUDIO_E2E_RUN: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    },
+  });
+  const page = await app.firstWindow();
+  await expect(page.getByText("Let’s set up your counter.")).toBeVisible();
+  await page.getByRole("button", { name: /Create my shop/ }).click();
+  await page.getByLabel("Shop name").fill("Test Shop");
+  await page.getByRole("button", { name: /Create shop/ }).click();
+  await expect(page.locator("header").getByText("Test Shop")).toBeVisible();
+  await page.getByRole("link", { name: "Receipt Templates" }).click();
+  await expect(page.getByText("Paid by CASH", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Amount paid: $25.00", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Change: $3.95", { exact: true })).toBeVisible();
+  await page.getByAltText("Scannable receipt QR code").click();
+  await expect(page.getByLabel("Printed QR size")).toHaveValue("5");
+  await expect(page.getByLabel("Alignment")).toHaveValue("center");
+  await page.getByRole("link", { name: "Printers" }).click();
+  await expect(page.getByText("No printers yet")).toBeVisible();
+  await page.getByRole("button", { name: "Add printer" }).first().click();
+  await page.getByLabel("Profile name").fill("Test receipt printer");
+  await page.getByLabel("Connection").selectOption("network");
+  await page.getByLabel("IP / host").fill("127.0.0.1");
+  await page.getByRole("button", { name: "Save printer" }).click();
+  await page.getByRole("button", { name: "Print test" }).click();
+  await expect(
+    page.getByText("Choose a saved receipt template."),
+  ).toBeVisible();
+  await expect(page.getByLabel("Receipt template")).toHaveValue(/.+/);
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("link", { name: "Products" }).click();
+  await page.getByRole("button", { name: "Add product" }).click();
+  await page.getByLabel("Product name").click();
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Product name")).toHaveValue("");
+  await expect(page.getByLabel("Barcode")).toHaveValue("123456789012");
+  await expect(
+    page.getByRole("button", { name: "Save product" }),
+  ).toBeVisible();
+  await page.getByLabel("Product name").fill("Coffee Beans");
+  await page.getByLabel("Price").press("Control+A");
+  await page.getByLabel("Price").press("Backspace");
+  await page.getByLabel("Price").type("450");
+  await page.getByLabel("Stock quantity").press("Control+A");
+  await page.getByLabel("Stock quantity").press("Backspace");
+  await page.getByLabel("Stock quantity").type("12");
+  await page.getByLabel("Tax rate %").press("Control+A");
+  await page.getByLabel("Tax rate %").press("Backspace");
+  await page.getByLabel("Tax rate %").type("15");
+  await expect(page.getByLabel("Stock quantity")).toHaveValue("12");
+  await expect(page.getByLabel("Tax rate %")).toHaveValue("15");
+  await page.getByRole("button", { name: "Save product" }).click();
+  await expect(page.getByRole("button", { name: "Save product" })).toHaveCount(
+    0,
+  );
+  const productManagementSearch = page.getByPlaceholder(
+    "Search name, SKU or scan barcode…",
+  );
+  await page.getByRole("heading", { name: "Products", exact: true }).click();
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(productManagementSearch).toHaveValue("123456789012");
+  await page.getByRole("button", { name: "Add product" }).click();
+  await page.getByLabel("Product name").click();
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Existing product found.")).toBeVisible();
+  await expect(page.getByLabel("Current stock")).toHaveValue("12");
+  await page.getByLabel("Quantity received").fill("5");
+  await page.getByRole("button", { name: "Add stock", exact: true }).click();
+  await expect(page.getByText("17 in stock")).toBeVisible();
+  await expect(page.getByText("Product labels are not set up.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Print label" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByText("Appearance", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Enable loyalty points").check();
+  await page.getByLabel("Spend amount (USD)").fill("100");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Save loyalty settings" }).click();
+  await page.getByRole("link", { name: "New Sale" }).click();
+  const productSearch = page.getByLabel("Product search or barcode scan");
+  await expect(productSearch).toBeVisible();
+  await page.getByLabel("Customer phone").fill("01700000001");
+  await page.getByRole("button", { name: "Start another sale" }).click();
+  await expect(
+    page.getByLabel("Customer phone").filter({ visible: true }),
+  ).toHaveValue("");
+  await expect(
+    page.getByText("Your cart is empty").filter({ visible: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Customer phone")
+    .filter({ visible: true })
+    .fill("01800000002");
+  await page.getByText("Sale 1", { exact: true }).click();
+  await expect(
+    page.getByLabel("Customer phone").filter({ visible: true }),
+  ).toHaveValue("01700000001");
+  await page.getByLabel("Close Sale 2").click();
+  expect(
+    Number.parseFloat(
+      await productSearch.evaluate(
+        (element) => getComputedStyle(element).paddingLeft,
+      ),
+    ),
+  ).toBeGreaterThan(30);
+  await productSearch.fill("Coffee");
+  await expect(
+    page.getByRole("listbox", { name: "Product matches" }),
+  ).toBeVisible();
+  expect(
+    await page
+      .getByRole("listbox", { name: "Product matches" })
+      .getByRole("option")
+      .count(),
+  ).toBeLessThanOrEqual(15);
+  await page
+    .getByRole("option", { name: /Coffee Beans/ })
+    .dispatchEvent("click");
+  await page.getByRole("button", { name: "Remove Coffee Beans" }).click();
+  await page.getByLabel("Customer phone").fill("017");
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Coffee Beans added")).toBeVisible();
+  await expect(page.getByLabel("Customer phone")).toHaveValue("017");
+  await page.getByLabel("Customer phone").fill("01715319802");
+  await expect(page.getByText(/New number/)).toBeVisible();
+  await page.getByRole("button", { name: "Add customer details" }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Phone", exact: true }),
+  ).toHaveValue("01715319802");
+  await page.getByLabel("Customer name (optional)").fill("Test Customer");
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.getByText(/Selected: Test Customer/)).toBeVisible();
+  await page.getByLabel("Customer phone").fill("01715");
+  await page
+    .getByRole("option", { name: /01715319802/ })
+    .dispatchEvent("click");
+  await expect(page.getByLabel("Customer phone")).toHaveValue("01715319802");
+  await expect(page.getByRole("button", { name: "Redeem" })).toBeDisabled();
+  await expect(
+    page.getByText("This customer does not have redeemable points yet."),
+  ).toBeVisible();
+  await page.getByLabel("Amount paid").fill("7,500.50");
+  await expect(page.getByLabel("Amount paid")).toHaveValue("7500.50");
+  await expect(page.getByText("Change due")).toBeVisible();
+  await page.getByLabel("Customer phone").fill("01900000000");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Complete without printing" }).click();
+  await page.getByRole("link", { name: "Customers" }).click();
+  await expect(
+    page.getByRole("cell", { name: "01900000000" }).first(),
+  ).toBeVisible();
+  const customerRow = page.getByRole("row").filter({ hasText: "01900000000" });
+  await expect(
+    customerRow.getByRole("cell", { name: "5", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "New Sale" }).click();
+  await page.getByLabel("Product search or barcode scan").fill("123456789012");
+  await page.getByLabel("Product search or barcode scan").press("Enter");
+  await page.getByLabel("Customer phone").fill("01900");
+  await page
+    .getByRole("option", { name: /01900000000/ })
+    .dispatchEvent("click");
+  await page.getByLabel("Points to redeem").fill("5");
+  await page.getByRole("button", { name: "Redeem" }).click();
+  await expect(page.getByText("5 points applied")).toBeVisible();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByText("5 points applied")).toHaveCount(0);
+  await page.getByRole("link", { name: "Sales" }).click();
+  await page.getByRole("button", { name: "View" }).click();
+  await page.getByRole("button", { name: "Refund" }).click();
+  await page.getByLabel("Return quantity for Coffee Beans").fill("1");
+  await page.getByLabel("Reason").fill("Customer return");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Confirm refund" }).click();
+  await expect(page.getByText("refund", { exact: true }).first()).toBeVisible();
+  await page.getByRole("link", { name: "New Sale" }).click();
+  await page.getByLabel("Product search or barcode scan").fill("123456789012");
+  await page.getByLabel("Product search or barcode scan").press("Enter");
+  await page.getByLabel("Customer phone").fill("01900");
+  await page
+    .getByRole("option", { name: /01900000000/ })
+    .dispatchEvent("click");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Complete without printing" }).click();
+  await expect(page.getByText("Your cart is empty")).toBeVisible();
+  await page.getByRole("link", { name: "Sales" }).click();
+  const latestSaleRow = page
+    .getByRole("row")
+    .filter({ has: page.getByText("sale", { exact: true }) })
+    .first();
+  await latestSaleRow.getByRole("button", { name: "View" }).click();
+  await page.getByRole("button", { name: "Replace" }).click();
+  await page.getByLabel("Return quantity for Coffee Beans").fill("1");
+  await page.getByLabel("Replacement product").selectOption({ index: 1 });
+  await page.getByLabel("Reason").fill("Exchange");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Confirm replacement" }).click();
+  await expect(
+    page.getByText("replacement", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Label Templates" }).click();
+  await page.getByRole("button", { name: "Create product label" }).click();
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Print test" })).toHaveCount(0);
+  await expect(page.getByText("Save to test print.")).toBeVisible();
+  await page.getByLabel("Width mm").fill("63.5");
+  await page.getByLabel("Height mm").fill("38.1");
+  await expect(
+    page.getByText("House Blend Coffee", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Product name" }).click();
+  const productNameElement = page
+    .getByText("House Blend Coffee", { exact: true })
+    .locator("..");
+  const productNameBox = await productNameElement.boundingBox();
+  await page.getByRole("button", { name: "Product SKU" }).click();
+  const skuBox = await page
+    .getByText("SKU: COFFEE-001", { exact: true })
+    .locator("..")
+    .boundingBox();
+  expect(productNameBox).not.toBeNull();
+  expect(skuBox).not.toBeNull();
+  expect(skuBox!.y).toBeGreaterThanOrEqual(
+    productNameBox!.y + productNameBox!.height,
+  );
+  await page.getByText("House Blend Coffee", { exact: true }).click();
+  await page.getByLabel("Alignment").selectOption("center");
+  await expect(
+    page.getByText("House Blend Coffee", { exact: true }).locator(".."),
+  ).toHaveCSS("text-align", "center");
+  await page.getByRole("button", { name: "Save label" }).click();
+  await expect(page.getByText("Saved locally")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Print test" })).toBeDisabled();
+  await page.getByRole("link", { name: "Products" }).click();
+  await page.getByRole("button", { name: "Print label" }).click();
+  await expect(page.getByLabel("Label template")).toHaveValue(/.+/);
+  await expect(page.getByText(/Add a printer profile with type/)).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await app.close();
 });
