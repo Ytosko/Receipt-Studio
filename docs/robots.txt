@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://reciept-printer.ytosko.dev/sitemap.xml
