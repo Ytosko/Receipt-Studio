@@ -38,8 +38,9 @@ export function Modal({
         ? document.activeElement
         : undefined;
     const frame = requestAnimationFrame(() => {
-      const preferred =
-        panel.current?.querySelector<HTMLElement>("[autofocus]");
+      const preferred = panel.current?.querySelector<HTMLElement>(
+        "[data-autofocus], [autofocus]",
+      );
       const first = panel.current?.querySelector<HTMLElement>(
         "input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)",
       );

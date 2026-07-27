@@ -12,9 +12,10 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { formatMoney } from "../../shared/money";
-import type { Shop } from "../../shared/schemas";
+import type { Product, Shop } from "../../shared/schemas";
 import { DraftNumberInput, Empty, Modal, Notice, Stat } from "./components";
 import { CustomerForm, PrinterForm, ProductForm, ShopForm } from "./forms";
+import { RapidStockIn, type StockInPrintSelection } from "./stockIn";
 import { useStore } from "./store";
 
 export function Dashboard() {
@@ -175,6 +176,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
   const [labelPrinterId, setLabelPrinterId] = useState("");
   const [labelTemplateId, setLabelTemplateId] = useState("");
   const [labelBusy, setLabelBusy] = useState(false);
+  const [rapidStockIn, setRapidStockIn] = useState(false);
   const [notice, setNotice] = useState<{ message: string; error?: boolean }>();
   const searchRef = useRef<HTMLInputElement>(null);
   const scanner = useRef({ value: "", started: 0, last: 0 });
@@ -201,7 +203,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
     (value) => !shop || value.shopId === shop.id,
   );
   useEffect(() => {
-    if (kind !== "products" || editing) return;
+    if (kind !== "products" || editing || rapidStockIn) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (
@@ -240,7 +242,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [kind, editing, store.products]);
+  }, [kind, editing, rapidStockIn, store.products]);
 
   const save = async (value: any) => {
     await store.upsert(kind as any, value);
@@ -307,6 +309,38 @@ export function EntityPage({ kind }: { kind: Kind }) {
     }
   };
 
+  const receiveRapidStock = async (
+    product: Product,
+    quantity: number,
+    selection?: StockInPrintSelection,
+  ) => {
+    const current =
+        store.products.find((value) => value.id === product.id) || product,
+      updated = {
+        ...current,
+        stock: current.stock + quantity,
+        updatedAt: new Date().toISOString(),
+      };
+    await store.upsert("products", updated);
+    if (!selection) return { newStock: updated.stock };
+    try {
+      const result = await window.receiptStudio.printProductLabel(
+        updated.id,
+        selection.labelId,
+        selection.printerId,
+        selection.copies,
+      );
+      return {
+        newStock: updated.stock,
+        printMessage:
+          result.message ||
+          `${selection.copies} label${selection.copies === 1 ? "" : "s"} sent to printer.`,
+      };
+    } catch (error: any) {
+      return { newStock: updated.stock, printError: error.message };
+    }
+  };
+
   const printProductLabel = async () => {
     if (!labelProduct || !labelPrinterId || !labelTemplateId) return;
     setLabelBusy(true);
@@ -370,10 +404,18 @@ export function EntityPage({ kind }: { kind: Kind }) {
           </p>
           <h1 className="text-3xl font-black">{labels[kind]}</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing({})}>
-          <Plus size={17} />
-          Add {labels[kind].slice(0, -1).toLowerCase()}
-        </button>
+        <div className="flex gap-2">
+          {kind === "products" && (
+            <button className="btn" onClick={() => setRapidStockIn(true)}>
+              <Barcode size={17} />
+              Add products via barcode
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => setEditing({})}>
+            <Plus size={17} />
+            Add {labels[kind].slice(0, -1).toLowerCase()}
+          </button>
+        </div>
       </div>
       {kind === "products" && !productLabels.length && (
         <div className="surface p-4 mb-4 bg-[#f5efff] border-[#d8c5f5] text-sm flex items-center justify-between">
@@ -583,6 +625,7 @@ export function EntityPage({ kind }: { kind: Kind }) {
             <ProductForm
               value={editing.id ? editing : undefined}
               shopId={shop?.id}
+              initialBarcode={editing.initialBarcode}
               products={store.products}
               labelTemplates={printableProductLabels}
               labelPrinters={labelPrinters}
@@ -601,6 +644,26 @@ export function EntityPage({ kind }: { kind: Kind }) {
               onSave={save}
             />
           )}
+        </Modal>
+      )}
+
+      {rapidStockIn && (
+        <Modal
+          wide
+          title="Add products via barcode"
+          onClose={() => setRapidStockIn(false)}
+        >
+          <RapidStockIn
+            shopId={shop?.id}
+            products={store.products}
+            labelTemplates={printableProductLabels}
+            labelPrinters={labelPrinters}
+            onReceive={receiveRapidStock}
+            onCreateProduct={(barcode) => {
+              setRapidStockIn(false);
+              setEditing({ initialBarcode: barcode });
+            }}
+          />
         </Modal>
       )}
 

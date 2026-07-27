@@ -38,10 +38,12 @@ test("first launch renders the setup workflow", async () => {
   await expect(page.getByLabel("Receipt template")).toHaveValue(/.+/);
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("link", { name: "Products" }).click();
-  await page.getByRole("button", { name: "Add product" }).click();
-  await page.getByLabel("Product name").click();
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  const addProductDialog = page.getByRole("dialog", { name: "Add Product" });
+  await expect(page.getByLabel("Barcode")).toBeFocused();
   await page.keyboard.type("123456789012");
   await page.keyboard.press("Enter");
+  await expect(addProductDialog).toBeVisible();
   await expect(page.getByLabel("Product name")).toHaveValue("");
   await expect(page.getByLabel("Barcode")).toHaveValue("123456789012");
   await expect(
@@ -70,7 +72,7 @@ test("first launch renders the setup workflow", async () => {
   await page.keyboard.type("123456789012");
   await page.keyboard.press("Enter");
   await expect(productManagementSearch).toHaveValue("123456789012");
-  await page.getByRole("button", { name: "Add product" }).click();
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
   await page.getByLabel("Product name").click();
   await page.keyboard.type("123456789012");
   await page.keyboard.press("Enter");
@@ -79,6 +81,46 @@ test("first launch renders the setup workflow", async () => {
   await page.getByLabel("Quantity received").fill("5");
   await page.getByRole("button", { name: "Add stock", exact: true }).click();
   await expect(page.getByText("17 in stock")).toBeVisible();
+  await page.getByRole("button", { name: "Add products via barcode" }).click();
+  const rapidStockDialog = page.getByRole("dialog", {
+    name: "Add products via barcode",
+  });
+  const rapidStockInput = page.getByLabel(
+    "Rapid stock barcode or product search",
+  );
+  await expect(rapidStockInput).toBeFocused();
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(rapidStockDialog).toContainText("stock 18");
+  await expect(rapidStockInput).toHaveValue("");
+  await expect(rapidStockInput).toBeFocused();
+  await rapidStockInput.fill("Coffee");
+  await rapidStockInput.press("Enter");
+  await rapidStockDialog.getByRole("option", { name: /Coffee Beans/ }).click();
+  await expect(rapidStockDialog).toContainText("stock 19");
+  await expect(rapidStockInput).toBeFocused();
+  // Real scans arrive slower than the 700ms duplicate-read guard.
+  await page.waitForTimeout(750);
+  await page.keyboard.type("123456789012");
+  await page.keyboard.press("Enter");
+  await expect(rapidStockDialog).toContainText("stock 20");
+  await expect(rapidStockInput).toBeFocused();
+  await expect(rapidStockDialog).toContainText("+3; stock 20");
+  await expect(rapidStockDialog).not.toContainText("stock 19");
+  await rapidStockInput.fill("999999999999");
+  await rapidStockDialog
+    .getByRole("button", { name: "Create product" })
+    .click();
+  const prefilledProductDialog = page.getByRole("dialog", {
+    name: "Add Product",
+  });
+  await expect(prefilledProductDialog.getByLabel("Barcode")).toHaveValue(
+    "999999999999",
+  );
+  await prefilledProductDialog
+    .getByRole("button", { name: "Close dialog" })
+    .click();
+  await expect(page.getByText("20 in stock")).toBeVisible();
   await expect(page.getByText("Product labels are not set up.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Print label" })).toHaveCount(
     0,

@@ -202,6 +202,7 @@ export function ShopForm({
 export function ProductForm({
   value,
   shopId,
+  initialBarcode,
   products = [],
   labelTemplates = [],
   labelPrinters = [],
@@ -211,6 +212,7 @@ export function ProductForm({
 }: {
   value?: Product;
   shopId?: string;
+  initialBarcode?: string;
   products?: Product[];
   labelTemplates?: LabelTemplate[];
   labelPrinters?: PrinterProfile[];
@@ -232,12 +234,15 @@ export function ProductForm({
       }
       return labelTemplates[0]?.id || "";
     })();
-  const [v, setV] = useState<Product>(value || blankProduct(shopId)),
+  const [v, setV] = useState<Product>(
+      value || blankProduct(shopId, initialBarcode),
+    ),
     [receiving, setReceiving] = useState<Product>(),
     [quantityReceived, setQuantityReceived] = useState(1),
     [labelTemplateId, setLabelTemplateId] = useState(preferredLabelId),
     [labelCopies, setLabelCopies] = useState(1);
-  const barcodeRef = useRef<HTMLInputElement>(null),
+  const nameRef = useRef<HTMLInputElement>(null),
+    barcodeRef = useRef<HTMLInputElement>(null),
     latest = useRef(v),
     scanner = useRef<{
       value: string;
@@ -278,7 +283,7 @@ export function ProductForm({
       setScanMessage(
         `${existing.name} found with ${existing.stock} in stock. Enter the received quantity below.`,
       );
-      return;
+      return true;
     }
     setReceiving(undefined);
     setV(
@@ -289,6 +294,7 @@ export function ProductForm({
     setScanMessage(
       `Barcode ${normalized} captured. Review the product, then click Save product.`,
     );
+    return false;
   };
   const captureScan = (event: ReactKeyboardEvent<HTMLFormElement>) => {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
@@ -302,12 +308,25 @@ export function ProductForm({
           time - state.started < 3000,
         code = state.value;
       scanner.current = { value: "", started: 0, last: 0 };
-      if (!fast) return;
+      if (!fast) {
+        if (
+          event.key === "Enter" &&
+          !(event.target instanceof HTMLButtonElement)
+        )
+          event.preventDefault();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       latest.current = state.original || latest.current;
-      applyBarcode(code);
-      window.setTimeout(() => barcodeRef.current?.focus(), 0);
+      const matchedExistingProduct = applyBarcode(code);
+      window.setTimeout(
+        () =>
+          matchedExistingProduct
+            ? barcodeRef.current?.focus()
+            : nameRef.current?.focus(),
+        0,
+      );
       return;
     }
     if (event.key.length !== 1) return;
@@ -366,7 +385,7 @@ export function ProductForm({
       <div className="col-span-2">
         <Field label="Product name">
           <input
-            autoFocus
+            ref={nameRef}
             required
             className="input"
             value={v.name}
@@ -431,6 +450,8 @@ export function ProductForm({
           <div className="flex gap-2">
             <input
               ref={barcodeRef}
+              autoFocus
+              data-autofocus
               className="input"
               placeholder="Scan or enter barcode"
               value={v.barcode || ""}
@@ -542,7 +563,7 @@ export function ProductForm({
             type="submit"
             data-action="save-print"
             disabled={Boolean(duplicate) || !assignedPrinter}
-            className="btn"
+            className="btn btn-primary"
           >
             {receiving ? "Add stock & print labels" : "Save & print label"}
           </button>
@@ -550,7 +571,7 @@ export function ProductForm({
         <button
           type="submit"
           disabled={Boolean(duplicate)}
-          className="btn btn-primary"
+          className={`btn ${canPrintLabel ? "" : "btn-primary"}`}
         >
           {receiving ? "Add stock" : value ? "Save changes" : "Save product"}
         </button>
