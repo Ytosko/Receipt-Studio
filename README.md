@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://reciept-printer.ytosko.dev/"><img alt="Website" src="https://img.shields.io/badge/website-reciept--printer.ytosko.dev-7438e6"></a>
+  <a href="https://reciept-printer.ytosko.dev/"><img alt="Website" src="https://img.shields.io/badge/website-reciept--studio.ytosko.dev-7438e6"></a>
   <a href="https://github.com/Ytosko/Receipt-Studio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Ytosko/Receipt-Studio?color=ff5f83"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/Ytosko/Receipt-Studio"></a>
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-17131f">
