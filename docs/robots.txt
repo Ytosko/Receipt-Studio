@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://reciept-printer.ytosko.dev/sitemap.xml
+Sitemap: https://reciept-studio.ytosko.dev/sitemap.xml
