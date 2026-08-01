@@ -16,15 +16,17 @@ body {
   margin: 0;
   position: relative;
   color: var(--ink);
-  background: var(--paper);
+  /* Ambient glows live here as background layers so they can never
+     widen the page or create horizontal scroll. */
+  background:
+    radial-gradient(circle, rgba(231, 216, 255, .55) 0, transparent 68%) no-repeat calc(100% + 120px) -260px / 520px 520px,
+    radial-gradient(circle, rgba(255, 217, 228, .55) 0, transparent 68%) no-repeat -280px 600px / 420px 420px,
+    var(--paper);
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 a { color: inherit; text-decoration: none; }
-.ambient { position: absolute; z-index: -1; border-radius: 50%; filter: blur(2px); opacity: .55; }
-.ambient-one { width: 520px; height: 520px; top: -260px; right: -120px; background: radial-gradient(circle, #e7d8ff 0, transparent 68%); }
-.ambient-two { width: 420px; height: 420px; top: 600px; left: -280px; background: radial-gradient(circle, #ffd9e4 0, transparent 68%); }
 
 .site-header {
   width: min(1180px, calc(100% - 40px));
